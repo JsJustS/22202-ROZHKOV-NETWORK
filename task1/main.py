@@ -36,8 +36,10 @@ def beacon_checker(this_app: App, this_observed: set, this_table: dict):
             to_be_removed.add(uuid)
 
     for uuid in to_be_removed:
-        this_observed.remove(uuid)
-        this_table.pop(uuid)
+        if uuid in this_observed:
+            this_observed.remove(uuid)
+        if uuid in this_table.keys():
+            this_table.pop(uuid)
 
 
 app = App()
