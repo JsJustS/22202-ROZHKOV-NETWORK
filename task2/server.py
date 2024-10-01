@@ -3,26 +3,32 @@ import threading
 import network
 import logging
 from os import path, makedirs
+import time
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    format="%(levelname)s: [%(threadName)s] > %(message)s",
+    level=logging.DEBUG
+)
 
 
 class Server(network.App):
-    PATH = "task2\\files"
+    PATH = "uploads"
 
-    def __init__(self, port: int):
+    def __init__(self, port: int, max_clients_simultaneously=5):
         super().__init__("0.0.0.0", port)
-        self.max_clients_amount = 5
+        self.max_clients_amount = max_clients_simultaneously
 
         self.accepting_thread = None
         self.__worker_idx = 0
 
-    def start(self) -> None:
-        super().start()
-
+    @staticmethod
+    def ensureDirectoryExists():
         files_dir = path.join(path.curdir, Server.PATH)
         makedirs(files_dir, exist_ok=True)
+
+    def start(self) -> None:
+        super().start()
 
         self._socket.bind((self.host, self.port))
         self._socket.listen(self.max_clients_amount)
@@ -59,6 +65,8 @@ class WorkerThread(threading.Thread):
         self.socket = sock
         self.host = client_host
         self.port = client_port
+        self._idx = idx
+        self.timer = None
 
     def receive(self):
         chunks = []
@@ -81,28 +89,83 @@ class WorkerThread(threading.Thread):
                 logging.error("chunk missing")
                 raise RuntimeError("socket connection broken")
             chunks.append(chunk)
-        print(*chunks, sep="\n")
+
+            if self.timer is not None:
+                self.timer.update(time.time_ns(), network.PacketGenerator.LEN_BYTES + 1 + chunk_len)
         return b''.join(chunks)
 
     def run(self) -> None:
         try:
             self.handleClient()
         except RuntimeError as e:
-            logging.error(f"[{self.name}] Socket connection was broken!")
+            self.socket.close()
+            self.timer.stop()
+            logging.error(f"Socket connection was broken! " + str(e))
 
     def handleClient(self):
+        Server.ensureDirectoryExists()
+
         filename = self.receive().decode("UTF-8")
-        logging.debug(f"[{threading.currentThread().getName()}] filename: {filename}")
+        logging.debug(f"filename: {filename}")
 
         file_length = int.from_bytes(self.receive(), "big", signed=True)
-        logging.debug(f"[{threading.currentThread().getName()}] file_length: {file_length}")
+        logging.debug(f"file_length: {file_length} byte(s)")
 
-        logging.debug(f"[{threading.currentThread().getName()}] started downloading...")
+        logging.debug(f"started downloading...")
+        self.timer = TimeCounterThread(3, num=self._idx)
+        self.timer.start()
+        self.timer.update(time.time_ns(), 0)
+
         file_bytes = self.receive()
-        #  print(file_bytes)
-
         files_dir = path.join(path.curdir, Server.PATH)
-
         with open(path.join(files_dir, filename), "wb") as f:
             f.write(file_bytes)
-        logging.debug(f"[{threading.currentThread().getName()}] finished downloading {filename}! Check {path.join(Server.PATH, filename)}.")
+
+        self.timer.stop()
+        logging.debug(f"finished downloading {filename}! Check {path.join(Server.PATH, filename)}.")
+
+        if path.getsize(path.join(files_dir, filename)) == file_length:
+            logging.info("Transaction successful.")
+            self.socket.send(bytes(network.PacketGenerator(True)))
+        else:
+            logging.info("Transaction incomplete.")
+            self.socket.send(bytes(network.PacketGenerator(False)))
+
+
+class TimeCounterThread(threading.Thread):
+    def __init__(self, interval: float, num=None):
+        super().__init__(
+            name=("Timer" if num is None else f"Timer-{num}")
+        )
+        self.interval = interval
+        self._event = threading.Event()
+
+        self.first_unix = None
+        self.total_bytes_recv = 0
+
+        self.last_bytes_recv = 0
+
+    def run(self):
+        while not self._event.wait(self.interval):
+            self.log()
+        self.log(total=True)
+
+    def update(self, unix: int, bytes_recv: int):
+        self.last_bytes_recv = bytes_recv
+        self.total_bytes_recv += bytes_recv
+        if self.first_unix is None:
+            self.first_unix = unix
+
+    def log(self, total=False):
+        if self.first_unix is None:
+            return
+        current_ns = time.time_ns()
+        average = self.total_bytes_recv * 10e9 / (current_ns - self.first_unix)
+        cur = self.last_bytes_recv / 3
+        if total:
+            logging.info(f"average speed: {average:.2f} bytes/sec")
+        else:
+            logging.info(f"current speed: {cur:.2f} bytes/sec | average speed: {average:.2f} bytes/sec")
+
+    def stop(self):
+        self._event.set()

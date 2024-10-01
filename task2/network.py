@@ -2,7 +2,7 @@ import threading
 import uuid
 import socket
 import argparse
-from typing import Optional
+from typing import Optional, Union
 
 
 class PacketGenerator:
@@ -19,29 +19,25 @@ class PacketGenerator:
         self._encoding = encoding
 
     def __bytes__(self):
-        if type(self.abstract_data) == str:
+        if isinstance(self.abstract_data, str):
             abstract_bytes = bytes(self.abstract_data, self._encoding)
-        elif type(self.abstract_data) == int:
-            abstract_bytes = int(self.abstract_data).to_bytes(PacketGenerator.LEN_BYTES, "big", signed=True)
-        elif type(self.abstract_data) == bytes:
-            abstract_bytes = self.abstract_data
-        else:
+        elif isinstance(self.abstract_data, int):
+            abstract_bytes = int(self.abstract_data).to_bytes(7, "big", signed=True)
+        elif isinstance(self.abstract_data, bool):
+            abstract_bytes = bool.to_bytes(self.abstract_data, 1, "big")
+        else:  # something custom
             abstract_bytes = bytes(self.abstract_data)
 
         bytes_string = b''
         while abstract_bytes:
             bytes_left = len(abstract_bytes)
 
-            if bytes_left > self.packet_piece_length_part_bytes:
-                bytes_string += int(self.packet_piece_length_part_bytes).to_bytes(PacketGenerator.LEN_BYTES, "big")
-                bytes_string += b'\x00'  # not last
-                bytes_string += abstract_bytes[:self.packet_piece_length_part_bytes]
-                abstract_bytes = abstract_bytes[self.packet_piece_length_part_bytes:]
-            else:
-                bytes_string += int(bytes_left).to_bytes(PacketGenerator.LEN_BYTES, "big")
-                bytes_string += b'\x01'  # last
-                bytes_string += abstract_bytes[:bytes_left]
-                abstract_bytes = abstract_bytes[bytes_left:]
+            piece_len = min(self.packet_piece_length_part_bytes, bytes_left)
+
+            bytes_string += int(piece_len).to_bytes(PacketGenerator.LEN_BYTES, "big")
+            bytes_string += b'\x00' if bytes_left > self.packet_piece_length_part_bytes else b'\x01'
+            bytes_string += abstract_bytes[:piece_len]
+            abstract_bytes = abstract_bytes[piece_len:]
         return bytes_string
 
 
@@ -77,8 +73,37 @@ class App:
 
     def _send(self, data: bytes) -> None:
         if self._socket is None:
-            RuntimeError("Trying to send data without establishing socket")
-        pass
+            raise RuntimeError("Trying to send data without establishing socket")
+        self._socket.send(data)
+
+    def send(self, data: Union[str, int, bytes]) -> None:
+        self._send(bytes(PacketGenerator(data, length=4096)))
+
+    def _receive(self) -> bytes:
+        if self._socket is None:
+            raise RuntimeError("Trying to receive data without establishing socket")
+
+        chunks = []
+        last_packet = False
+        while not last_packet:
+            chunk_len_b = self._socket.recv(PacketGenerator.LEN_BYTES)
+            if chunk_len_b == b'':
+                raise RuntimeError("socket connection broken")
+
+            flag_byte = self._socket.recv(1)
+            if flag_byte == b'':
+                raise RuntimeError("socket connection broken")
+            last_packet = False if flag_byte == b'\x00' else True
+
+            chunk_len = int.from_bytes(chunk_len_b, "big")
+            chunk = self._socket.recv(chunk_len)
+            if chunk == b'':
+                raise RuntimeError("socket connection broken")
+            chunks.append(chunk)
+        return b''.join(chunks)
+
+    def receive(self) -> bytes:
+        return self._receive()
 
     @property
     def is_ipv4(self):

@@ -18,7 +18,7 @@ def parse():
 def main():
     args = parse()
     if args.file is not None:
-        app = Client(args.ip, args.port, input("Enter filepath: "))
+        app = Client(args.ip, args.port, args.file)
     else:
         app = Server(args.port)
     app.start()
