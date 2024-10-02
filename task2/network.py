@@ -18,18 +18,20 @@ class PacketGenerator:
         self.packet_piece_length_part_bytes = length
         self._encoding = encoding
 
-    def __bytes__(self):
+    def generatePieces(self):
         if isinstance(self.abstract_data, str):
             abstract_bytes = bytes(self.abstract_data, self._encoding)
         elif isinstance(self.abstract_data, int):
             abstract_bytes = int(self.abstract_data).to_bytes(7, "big", signed=True)
         elif isinstance(self.abstract_data, bool):
             abstract_bytes = bool.to_bytes(self.abstract_data, 1, "big")
+        elif isinstance(self.abstract_data, bytes):
+            abstract_bytes = self.abstract_data
         else:  # something custom
             abstract_bytes = bytes(self.abstract_data)
 
-        bytes_string = b''
-        while abstract_bytes:
+        while True:
+            bytes_string = b''
             bytes_left = len(abstract_bytes)
 
             piece_len = min(self.packet_piece_length_part_bytes, bytes_left)
@@ -37,7 +39,15 @@ class PacketGenerator:
             bytes_string += int(piece_len).to_bytes(PacketGenerator.LEN_BYTES, "big")
             bytes_string += b'\x00' if bytes_left > self.packet_piece_length_part_bytes else b'\x01'
             bytes_string += abstract_bytes[:piece_len]
+            yield bytes_string
             abstract_bytes = abstract_bytes[piece_len:]
+            if not abstract_bytes:
+                break
+
+    def __bytes__(self):
+        bytes_string = b''
+        for piece in self.generatePieces():
+            bytes_string += piece
         return bytes_string
 
 
