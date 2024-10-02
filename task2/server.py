@@ -83,8 +83,9 @@ class WorkerThread(threading.Thread):
         chunk_len = int.from_bytes(chunk_len_b, "big")
         chunk = self.socket.recv(chunk_len)
         if len(chunk) < chunk_len:
-            logging.error("chunk missing")
-            raise Exception("socket connection broken")
+            logging.debug(f"chunk missing, {len(chunk)}/{chunk_len}")
+            if chunk == b'':
+                raise Exception("socket connection broken")
         return chunk, last_packet
 
     def receivePacket(self):
@@ -141,7 +142,7 @@ class WorkerThread(threading.Thread):
             f.close()
 
         self.timer.stop()
-        logging.debug(f"finished downloading {filename}! Check {path.join(Server.PATH, filename)}.")
+        logging.debug(f"finished transaction for \"{filename}\"! Check status for {path.join(Server.PATH, filename)}.")
 
         if path.getsize(path.join(files_dir, filename)) == file_length:
             logging.info("Transaction successful.")
@@ -190,7 +191,7 @@ class TimeCounterThread(threading.Thread):
         self._lock.release()
 
         current_ns = time.time_ns()
-        average = total_bytes_recv * 1e9 / min(1, (current_ns - first_ns))
+        average = total_bytes_recv * 1e9 / max(1, (current_ns - first_ns))
         cur = since_last_log / self.interval
         self._lock.acquire()
         self.since_last_log = 0

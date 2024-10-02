@@ -21,14 +21,31 @@ class Client(network.App):
 
     def start(self) -> None:
         super().start()
+
         self._socket.connect((self.host, self.port))
         logging.info(f"Client connected to {self.host}:{self.port}")
 
         self.handleFileTransaction()
 
+    def filereader_iter(self, file, size):
+        bytes_left = size
+        file.seek(0)
+        while True:
+            bytes_string = b''
+
+            piece_len = min(self.packet_size, bytes_left)
+
+            bytes_string += int(piece_len).to_bytes(network.PacketGenerator.LEN_BYTES, "big")
+            bytes_string += b'\x00' if bytes_left > self.packet_size else b'\x01'
+            bytes_string += file.read(piece_len)
+            yield bytes_string
+            bytes_left -= piece_len
+            if bytes_left <= 0:
+                break
+
     def sendFile(self):
         with open(self.filepath, "rb") as f:
-            for piece in network.PacketGenerator(f.read(), length=self.packet_size).generatePieces():
+            for piece in self.filereader_iter(f, path.getsize(self.filepath)):
                 self._send(piece)
 
     def handleFileTransaction(self):

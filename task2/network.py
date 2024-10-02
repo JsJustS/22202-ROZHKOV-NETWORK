@@ -1,8 +1,5 @@
-import threading
-import uuid
 import socket
-import argparse
-from typing import Optional, Union
+from typing import Union
 
 
 class PacketGenerator:
