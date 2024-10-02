@@ -139,6 +139,7 @@ class TimeCounterThread(threading.Thread):
         )
         self.interval = interval
         self._event = threading.Event()
+        self._lock = threading.Lock()
 
         self.first_unix = None
         self.total_bytes_recv = 0
@@ -151,17 +152,26 @@ class TimeCounterThread(threading.Thread):
         self.log(total=True)
 
     def update(self, unix: int, bytes_recv: int):
+        self._lock.acquire()
+
         self.last_bytes_recv = bytes_recv
         self.total_bytes_recv += bytes_recv
         if self.first_unix is None:
             self.first_unix = unix
 
+        self._lock.release()
+
     def log(self, total=False):
+        self._lock.acquire()
         if self.first_unix is None:
             return
+        first_unix, total_bytes_recv, last_bytes_recv = self.first_unix, self.total_bytes_recv, self.last_bytes_recv
+        self._lock.release()
+
         current_ns = time.time_ns()
-        average = self.total_bytes_recv * 10e9 / (current_ns - self.first_unix)
-        cur = self.last_bytes_recv / 3
+        average = total_bytes_recv * 10e9 / (current_ns - first_unix)
+        cur = last_bytes_recv / 3
+
         if total:
             logging.info(f"average speed: {average:.2f} bytes/sec")
         else:
