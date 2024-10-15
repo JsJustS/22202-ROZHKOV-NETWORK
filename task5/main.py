@@ -23,7 +23,7 @@ def setup_socket() -> socket.socket:
     )
 
     sock.setblocking(False)
-    sock.settimeout(10)
+    sock.settimeout(60)
 
     return sock
 
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     server_socket = setup_socket()
     server_socket.bind(("0.0.0.0", args.port))
-    server_socket.listen(0)
+    server_socket.listen(5)
 
     logging.info("Proxy started.")
 
@@ -94,9 +94,10 @@ if __name__ == "__main__":
                 if not proxy_client.is_alive:
                     to_be_removed.append(proxy_client)
                     continue
-                if proxy_client.proxy_server_socket in readable_sockets \
-                        or proxy_client.proxy_destination_socket in readable_sockets:
+                if proxy_client.proxy_server_socket in readable_sockets:
                     proxy_client.serve()
+                if proxy_client.proxy_destination_socket in readable_sockets:
+                    proxy_client.resend()
 
             for proxy_client in to_be_removed:
                 proxy_clients.remove(proxy_client)
