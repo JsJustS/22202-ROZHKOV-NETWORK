@@ -94,6 +94,7 @@ class ProxyClient:
                         socket.inet_aton(self.dest_host) +
                         int(self.dest_port).to_bytes(2, "big")
                     )
+                    logging.info(f"{self.host}:{self.port} > Connection established!")
                     self.handshake_step = HandshakeStep.CLIENT_ACTIVE
                     return
                 self.proxy_server_socket.send(b'\x05\x01\x00\x01\x00\x00\x00\x00\x00\x00')
