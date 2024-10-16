@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     server_socket = setup_socket()
     server_socket.bind(("0.0.0.0", args.port))
-    server_socket.listen(5)
+    server_socket.listen(0)
 
     logging.info("Proxy started.")
 

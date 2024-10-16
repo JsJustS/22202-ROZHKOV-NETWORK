@@ -15,10 +15,12 @@ class ProxyClient:
     def __init__(self, sock: socket.socket, host: str = None, port: int = None):
         self.is_alive = True
         self.proxy_server_socket = sock
-        self.proxy_destination_socket = None
         self.host = host
         self.port = port
         self.handshake_step = HandshakeStep.NOT_CONTACTED
+        self.proxy_destination_socket = None
+        self.dest_host = None
+        self.dest_port = None
 
     def serve(self):
         if not self.is_alive:
@@ -86,13 +88,24 @@ class ProxyClient:
 
                 # Parsed packet
                 if self.open_destination_connection(address, port):
-                    self.proxy_server_socket.send(b'\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00')
+                    self.dest_host, self.dest_port = self.proxy_destination_socket.getsockname()
+                    self.proxy_server_socket.send(
+                        b'\x05\x00\x00\x01' +
+                        socket.inet_aton(self.dest_host) +
+                        int(self.dest_port).to_bytes(2, "big")
+                    )
                     self.handshake_step = HandshakeStep.CLIENT_ACTIVE
                     return
                 self.proxy_server_socket.send(b'\x05\x01\x00\x01\x00\x00\x00\x00\x00\x00')
                 self.abort()
             case HandshakeStep.CLIENT_ACTIVE:
-                data = self.proxy_server_socket.recv(4096)
+                try:
+                    data = self.proxy_server_socket.recv(4096)
+                except ConnectionAbortedError:
+                    if not self.open_destination_connection(self.dest_host, self.dest_port):
+                        self.abort()
+                        return
+                    data = self.proxy_server_socket.recv(4096)
                 logging.debug(f"{self.host}:{self.port} >>> {data}")
                 if len(data) == 0:
                     self.abort()
