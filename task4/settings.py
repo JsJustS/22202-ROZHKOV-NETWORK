@@ -78,3 +78,5 @@ class ServerSettingsWindow(QWidget):
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         self.client.playerNameLine.setEnabled(True)
+        self.client.hostButton.setEnabled(True)
+        self.client.avaliableGamesTable.setEnabled(True)

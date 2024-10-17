@@ -60,6 +60,8 @@ class ClientWindow(QWidget):
         try:
             settingsWindow = ServerSettingsWindow(self)
             self.playerNameLine.setEnabled(False)
+            self.hostButton.setEnabled(False)
+            self.avaliableGamesTable.setEnabled(False)
         except Exception as e:
             logging.info(e)
 
