@@ -4,6 +4,8 @@ from qtpy import uic
 import os
 import json
 import logging
+import game
+import snakes.snakes_pb2 as snakes
 
 
 class ServerSettingsWindow(QWidget):
@@ -73,6 +75,17 @@ class ServerSettingsWindow(QWidget):
             json.dump(conf, js_file, indent=4)
 
     def startGame(self):
+        gameWindow = game.GameWidget(
+            self.client,
+            self.serverNameLine.text(),
+            snakes.GameConfig(
+                width=self.widthBox.value(),
+                height=self.heightBox.value(),
+                food_static=self.foodBox.value(),
+                state_delay_ms=self.delayBox.value()
+            )
+        )
+
         self.hide()
         self.client.hide()
 
