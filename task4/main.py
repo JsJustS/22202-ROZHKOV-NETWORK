@@ -32,7 +32,8 @@ class ClientWindow(QWidget, Subscriber):
         self.show()
 
     def notify(self, message: snakes.GameMessage):
-        print(message)
+        # print(message)
+        pass
 
     def loadUserConfig(self):
         if not os.path.exists("user_conf.json"):

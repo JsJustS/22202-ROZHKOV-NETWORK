@@ -16,27 +16,29 @@ class GameWidget(QWidget, Subscriber):
         self.ui = uic.loadUi('ui/game.ui', self)
 
         self.server_name = server_name
+        self.setWindowTitle(self.server_name + " | Snakes")
         self.settings = settings
-        self.role = snakes.NodeRole.MASTER if is_host else snakes.NodeRole.NORMAL
 
+        # <host variables>
         self.announcementTimer = None
+        self.snake_last_id = 0
         if is_host:
             self.becomeMaster()
+        # </host variables>
 
         self.client = client
+        self.player = snakes.GamePlayer(
+            name=self.client.playerNameLine.text(),
+            id=self.snake_last_id,  # fix later
+            role=snakes.NodeRole.MASTER if is_host else snakes.NodeRole.NORMAL,
+            score=0
+        )
         self.networkHandler = networkHandler
         self.networkHandler.subscribe(self)
 
-        self.snake_last_id = 0
+
         # update later
-        self.client_snake = Snake(
-            snakes.GamePlayer(
-                name=self.client.playerNameLine.text(),
-                id=self.snake_last_id,  # fix later
-                role=self.role,
-                score=0
-            )
-        )
+        self.client_snake = Snake(self.player)
         self.snake_last_id += 1
 
         self.field = FieldWidget(self.artWidget, self, settings, self.client_snake)
