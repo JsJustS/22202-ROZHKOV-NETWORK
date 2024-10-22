@@ -29,15 +29,25 @@ class NetworkHandler:
         self.multicast_socket.joinMulticastGroup(QHostAddress(self.MULTICAST_GROUP))
         self.multicast_socket.readyRead.connect(self.processMulticastDatagram)
 
-        print(self.direct_socket.state())
+        # self.direct_socket.writeDatagram(b"hello world", QHostAddress(self.host), self.direct_socket.localPort())
+
+    @property
+    def host(self):
+        local_hostname = socket.gethostname()
+        ip_addresses = socket.gethostbyname_ex(local_hostname)[2]
+        filtered_ips = [ip for ip in ip_addresses if not ip.startswith("127.")]
+        return filtered_ips[0]
 
     def processP2PDatagram(self):
-        while self.direct_socket.hasPendingDatagrams():
-            datagram = self.direct_socket.receiveDatagram()
-            raw = bytes(datagram.data())
-            message = snakes.GameMessage()
-            message.ParseFromString(raw)
-            self.notifySubscribers(message)
+        try:
+            while self.direct_socket.hasPendingDatagrams():
+                datagram = self.direct_socket.receiveDatagram()
+                raw = bytes(datagram.data())
+                message = snakes.GameMessage()
+                message.ParseFromString(raw)
+                self.notifySubscribers(message)
+        except Exception as e:
+            print(e)
 
     def processMulticastDatagram(self):
         while self.multicast_socket.hasPendingDatagrams():
