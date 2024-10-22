@@ -1,12 +1,13 @@
 from enum import Enum
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QKeyEvent
 from qtpy import uic
 import snakes.snakes_pb2 as snakes
 from math import ceil
 import random
+import threading
 
 
 class Direction(Enum):
@@ -78,7 +79,6 @@ class GameWidget(QWidget):
         else:
             if event.key() == 16777251:  # alt
                 self.field.spawnFood()
-            self.field.tick()
 
 
 class Snake:
@@ -125,16 +125,32 @@ class FieldWidget:
         self.parent = parent
         self.settings = settings
 
+        self.client_snake = client_snake
         self.snakes = [client_snake]
         self.food = set()
 
+        # change if not server
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.tick)
+        self.timer.setSingleShot(False)
+        self.timer.start(self.settings.state_delay_ms)
+
     def tick(self):
         try:
+            killing_blocks = [(s.x % self.settings.width, s.y % self.settings.height) for s in self.snakes]
+            for s in self.snakes:
+                killing_blocks.extend(
+                    list(map(lambda poz: (poz[0] % self.settings.width, poz[1] % self.settings.height), s.tail))
+                )
             for snake in self.snakes:
                 last = snake.move()
-                if self.snakeToTorPos(snake) in self.food:
-                    self.food.remove(self.snakeToTorPos(snake))
+                pos = self.snakeToTorPos(snake)
+                if pos in self.food:
+                    self.food.remove(pos)
                     snake.tail.append(last)
+                if pos in killing_blocks:
+                    self.generateFoodFromSnake(snake)
+                    snake.kill()
             self.parent.update()
         except Exception as e:
             print(e)
@@ -199,14 +215,14 @@ class FieldWidget:
                     a + x * base,
                     b + y * base,
                     base, base,
-                    QColor("blue")
+                    QColor("blue") if snake == self.client_snake else QColor("red")
                 )
                 for tail_block in snake.tail:
                     painter.fillRect(
                         a + (tail_block[0] % self.settings.width) * base,
                         b + (tail_block[1] % self.settings.height) * base,
                         base, base,
-                        QColor("aqua")
+                        QColor("aqua") if snake == self.client_snake else QColor("pink")
                     )
         except Exception as e:
             print(e)
