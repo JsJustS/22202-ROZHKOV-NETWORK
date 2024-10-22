@@ -88,6 +88,7 @@ class Snake:
         self.y = y
         self.player = player
         self.direction = direction
+        self.points = 0
 
         self.tail = list()
         # Координаты змейки обновляются и приводятся к координатам тора на поле
@@ -100,6 +101,12 @@ class Snake:
                 self.tail.append((self.x + 1, self.y))
             case Direction.RIGHT:
                 self.tail.append((self.x - 1, self.y))
+
+    def addPoint(self):
+        self.points += 1
+
+    def kill(self):
+        pass
 
     def move(self):
         new_x, new_y = self.x, self.y
@@ -120,7 +127,6 @@ class Snake:
 
 class FieldWidget:
     def __init__(self, canvas: QWidget, parent: QWidget, settings: snakes.GameConfig, client_snake: Snake):
-        self.field = []
         self.canvas = canvas
         self.parent = parent
         self.settings = settings
@@ -137,23 +143,72 @@ class FieldWidget:
 
     def tick(self):
         try:
-            killing_blocks = [(s.x % self.settings.width, s.y % self.settings.height) for s in self.snakes]
-            for s in self.snakes:
-                killing_blocks.extend(
-                    list(map(lambda poz: (poz[0] % self.settings.width, poz[1] % self.settings.height), s.tail))
-                )
+            # Step 1. Food Update
+            food_to_be_deleted = set()
+
             for snake in self.snakes:
                 last = snake.move()
                 pos = self.snakeToTorPos(snake)
                 if pos in self.food:
-                    self.food.remove(pos)
+                    food_to_be_deleted.add(pos)
                     snake.tail.append(last)
-                if pos in killing_blocks:
-                    self.generateFoodFromSnake(snake)
+                    snake.addPoint()
+
+            self.food.difference_update(food_to_be_deleted)
+
+            # Step 2. Danger Update
+            killing_blocks = dict()
+            for s in self.snakes:
+                pos = (s.x % self.settings.width, s.y % self.settings.height)
+                if pos not in killing_blocks.keys():
+                    killing_blocks[pos] = list()
+                killing_blocks[pos].append(s)
+                for block in s.tail:
+                    pos = (block[0] % self.settings.width, block[1] % self.settings.height)
+                    if pos not in killing_blocks.keys():
+                        killing_blocks[pos] = list()
+                    killing_blocks[pos].append(s)
+
+            dead_snakes = list()
+            for snake in self.snakes:
+                pos = self.snakeToTorPos(snake)
+                if pos in killing_blocks.keys():
+                    killers = killing_blocks[pos]
+                    killers.remove(snake)
+                    if len(killers) == 0:
+                        continue
+                    for killer in killers:
+                        if killer != snake:
+                            killer.addPoint()
+                    self.spawnFoodFromSnake(snake)
                     snake.kill()
+                    dead_snakes.append(snake)
+            for snake in dead_snakes:
+                self.snakes.remove(snake)
+
+            # Step 3. Spawn Food.
+            if len(self.food) < self.settings.food_static + len(self.snakes):
+                occupied_blocks = [i for i in self.food]
+                occupied_blocks.extend([self.snakeToTorPos(s) for s in self.snakes])
+                for s in self.snakes:
+                    occupied_blocks.extend(s.tail)
+                while len(self.food) < self.settings.food_static + len(self.snakes):
+                    occupied_blocks.append(self.spawnFood(occupied_blocks))
+                    if len(occupied_blocks) == self.settings.width * self.settings.height:
+                        break  # no free space for food
+
             self.parent.update()
         except Exception as e:
             print(e)
+
+    def spawnFoodFromSnake(self, snake: Snake):
+        snake_blocks = [(s[0] % self.settings.width, s[1] % self.settings.height) for s in snake.tail]
+        snake_blocks.append((snake.x % self.settings.width, snake.y % self.settings.height))
+
+        for block in snake_blocks:
+            a = random.random()
+            if a < 0.5:
+                self.food.add(block)
 
     def draw(self):
         try:
@@ -230,9 +285,12 @@ class FieldWidget:
     def snakeToTorPos(self, snake: Snake):
         return snake.x % self.settings.width, snake.y % self.settings.height
 
-    def spawnFood(self):
+    def spawnFood(self, occupied_blocks: list = None):
+        if occupied_blocks is None:
+            occupied_blocks = []
+
         while True:
             x, y = random.randint(0, self.settings.width - 1), random.randint(0, self.settings.height - 1)
-            if (x, y) not in self.food:
+            if (x, y) not in occupied_blocks:
                 self.food.add((x, y))
-                return
+                return x, y
