@@ -9,9 +9,10 @@ import logging
 import random
 
 from settings import ServerSettingsWindow
+from network import NetworkHandler, Subscriber
 
 
-class ClientWindow(QWidget):
+class ClientWindow(QWidget, Subscriber):
     def __init__(self):
         super().__init__()
         self.ui = uic.loadUi('ui/client.ui', self)
@@ -25,7 +26,13 @@ class ClientWindow(QWidget):
         self.playerNameLine.editingFinished.connect(self.saveUserConfig)
         self.hostButton.clicked.connect(self.openServerSettingsScreen)
 
+        self.networkHandler = NetworkHandler()
+        self.networkHandler.subscribe(self)
+
         self.show()
+
+    def notify(self, message: snakes.GameMessage):
+        print(message)
 
     def loadUserConfig(self):
         if not os.path.exists("user_conf.json"):

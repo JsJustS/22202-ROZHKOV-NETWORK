@@ -1,44 +1,103 @@
-from enum import Enum
-
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QKeyEvent
+from PyQt6.QtGui import QPainter, QColor, QKeyEvent
 from qtpy import uic
 import snakes.snakes_pb2 as snakes
 from math import ceil
 import random
-import threading
+from network import NetworkHandler, Subscriber
 
 
-class Direction(Enum):
-    LEFT = 1
-    UP = 2
-    RIGHT = 3
-    DOWN = 4
-
-
-class GameWidget(QWidget):
+class GameWidget(QWidget, Subscriber):
     keyPressed = pyqtSignal(QKeyEvent)
 
-    def __init__(self, client: QWidget, server_name: str, settings: snakes.GameConfig):
+    def __init__(self, client: QWidget, server_name: str, settings: snakes.GameConfig, networkHandler: NetworkHandler, is_host: bool = True):
         super().__init__()
         self.ui = uic.loadUi('ui/game.ui', self)
 
         self.server_name = server_name
         self.settings = settings
+        self.role = snakes.NodeRole.MASTER if is_host else snakes.NodeRole.NORMAL
+
+        self.announcementTimer = None
+        if is_host:
+            self.becomeMaster()
 
         self.client = client
+        self.networkHandler = networkHandler
+        self.networkHandler.subscribe(self)
+
+        self.snake_last_id = 0
         # update later
-        self.client_snake = Snake(self.client, x=3, y=1, direction=Direction.DOWN)
+        self.client_snake = Snake(
+            snakes.GamePlayer(
+                name=self.client.playerNameLine.text(),
+                id=self.snake_last_id,  # fix later
+                role=self.role,
+                score=0
+            )
+        )
+        self.snake_last_id += 1
 
         self.field = FieldWidget(self.artWidget, self, settings, self.client_snake)
 
-        self.leaveButton.clicked.connect(self.returnToClient)
+        # self.leaveButton.clicked.connect(self.returnToClient)
         self.hostButton.clicked.connect(self.openServerSettings)
 
         self.keyPressed.connect(self.onKey)
 
         self.show()
+
+    def becomeMaster(self):
+        try:
+            self.announcementTimer = QTimer()
+            self.announcementTimer.setSingleShot(False)
+            self.announcementTimer.timeout.connect(self.sendAnnouncementMsg)
+            self.announcementTimer.start(1000)
+        except Exception as e:
+            print("becomeMaster", e)
+
+    def stopBeingMaster(self):
+        try:
+            self.role = snakes.NodeRole.VIEWER
+            if self.announcementTimer is not None:
+                self.announcementTimer.stop()
+        except Exception as e:
+            print("stopBeingMaster", e)
+
+    def sendAnnouncementMsg(self):
+        try:
+            message = snakes.GameMessage()
+            message.msg_seq = 0
+            game = message.announcement.games.add()
+
+            game.game_name = self.server_name
+
+            game.config.width = self.settings.width
+            game.config.height = self.settings.width
+            game.config.food_static = self.settings.food_static
+            game.config.state_delay_ms = self.settings.state_delay_ms
+
+            game.can_join = self.field.getSpaceForNewSnake() is not None
+
+            for snake in self.field.snakes:
+                player = game.players.players.add()
+                player.name = snake.player.name
+                player.id = snake.player.id
+                player.ip_address = snake.player.ip_address
+                player.port = snake.player.port
+                player.role = snake.player.role
+                player.type = snake.player.type
+                player.score = snake.player.score
+
+            self.networkHandler.multicast(message)
+        except Exception as e:
+            print("sendAnnouncementMsg", e)
+
+    def closeEvent(self, event):
+        self.returnToClient()
+        self.stopBeingMaster()
+        super().closeEvent(event)
 
     def returnToClient(self):
         self.client.playerNameLine.setEnabled(True)
@@ -67,10 +126,10 @@ class GameWidget(QWidget):
 
     def onKey(self, event: QKeyEvent):
         keys = {
-            16777234: Direction.LEFT,
-            16777235: Direction.UP,
-            16777236: Direction.RIGHT,
-            16777237: Direction.DOWN
+            16777234: snakes.Direction.LEFT,
+            16777235: snakes.Direction.UP,
+            16777236: snakes.Direction.RIGHT,
+            16777237: snakes.Direction.DOWN
         }
 
         if event.key() in keys.keys():
@@ -85,27 +144,26 @@ class GameWidget(QWidget):
 
 class Snake:
 
-    def __init__(self, player, x: int = 0, y: int = 0, direction: Direction = Direction.UP):
+    def __init__(self, player: snakes.GamePlayer, x: int = 0, y: int = 0, direction: snakes.Direction = snakes.Direction.UP):
         self.x = x
         self.y = y
         self.player = player
         self.direction = direction
-        self.points = 0
 
         self.tail = list()
         # Координаты змейки обновляются и приводятся к координатам тора на поле
         match self.direction:
-            case Direction.UP:
+            case snakes.Direction.UP:
                 self.tail.append((self.x, self.y + 1))
-            case Direction.DOWN:
+            case snakes.Direction.DOWN:
                 self.tail.append((self.x, self.y - 1))
-            case Direction.LEFT:
+            case snakes.Direction.LEFT:
                 self.tail.append((self.x + 1, self.y))
-            case Direction.RIGHT:
+            case snakes.Direction.RIGHT:
                 self.tail.append((self.x - 1, self.y))
 
     def addPoint(self):
-        self.points += 1
+        self.player.score += 1
 
     def kill(self):
         pass  # todo: set player role as VIEWER
@@ -113,13 +171,13 @@ class Snake:
     def move(self):
         new_x, new_y = self.x, self.y
         match self.direction:
-            case Direction.UP:
+            case snakes.Direction.UP:
                 new_y -= 1
-            case Direction.DOWN:
+            case snakes.Direction.DOWN:
                 new_y += 1
-            case Direction.LEFT:
+            case snakes.Direction.LEFT:
                 new_x -= 1
-            case Direction.RIGHT:
+            case snakes.Direction.RIGHT:
                 new_x += 1
         last = self.tail[-1]
         self.tail = [(self.x, self.y)] + self.tail[:-1]
@@ -134,12 +192,7 @@ class FieldWidget:
         self.settings = settings
 
         self.client_snake = client_snake
-        self.snakes = [
-            client_snake,
-            Snake(None, x=1, y=3, direction=Direction.RIGHT),
-            Snake(None, x=5, y=3, direction=Direction.LEFT),
-            Snake(None, x=3, y=5, direction=Direction.UP)
-        ]
+        self.snakes = [client_snake]
         self.food = set()
 
         # change if not server
@@ -207,6 +260,10 @@ class FieldWidget:
             self.parent.update()
         except Exception as e:
             print(e)
+
+    def getSpaceForNewSnake(self):
+        # todo: fix later
+        return 0, 0
 
     def spawnFoodFromSnake(self, snake: Snake):
         snake_blocks = [(s[0] % self.settings.width, s[1] % self.settings.height) for s in snake.tail]
