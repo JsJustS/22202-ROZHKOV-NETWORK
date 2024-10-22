@@ -29,7 +29,7 @@ class GameWidget(QWidget):
 
         self.client = client
         # update later
-        self.client_snake = Snake(self.client)
+        self.client_snake = Snake(self.client, x=3, y=1, direction=Direction.DOWN)
 
         self.field = FieldWidget(self.artWidget, self, settings, self.client_snake)
 
@@ -75,6 +75,8 @@ class GameWidget(QWidget):
 
         if event.key() in keys.keys():
             pass  # send steer message and update direction ONLY when receiving own steer message
+            # Если команда заставляет змейку повернуть в направлении, занятом соседней с головой клеткой
+            # (попытка повернуть вспять), то такая команда игнорируется.
             self.client_snake.direction = keys[event.key()]
         else:
             if event.key() == 16777251:  # alt
@@ -106,7 +108,7 @@ class Snake:
         self.points += 1
 
     def kill(self):
-        pass
+        pass  # todo: set player role as VIEWER
 
     def move(self):
         new_x, new_y = self.x, self.y
@@ -132,7 +134,12 @@ class FieldWidget:
         self.settings = settings
 
         self.client_snake = client_snake
-        self.snakes = [client_snake]
+        self.snakes = [
+            client_snake,
+            Snake(None, x=1, y=3, direction=Direction.RIGHT),
+            Snake(None, x=5, y=3, direction=Direction.LEFT),
+            Snake(None, x=3, y=5, direction=Direction.UP)
+        ]
         self.food = set()
 
         # change if not server
@@ -173,7 +180,7 @@ class FieldWidget:
             for snake in self.snakes:
                 pos = self.snakeToTorPos(snake)
                 if pos in killing_blocks.keys():
-                    killers = killing_blocks[pos]
+                    killers = [s for s in killing_blocks[pos]]
                     killers.remove(snake)
                     if len(killers) == 0:
                         continue
