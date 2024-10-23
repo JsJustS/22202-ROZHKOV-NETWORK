@@ -53,12 +53,18 @@ class GameWidget(QWidget, Subscriber):
         self.show()
 
     def notify(self, datagram: QNetworkDatagram):
+        raw = bytes(datagram.data())
+        message = snakes.GameMessage()
+        message.ParseFromString(raw)
         match message.WhichOneof("Type"):
             case "join":
                 if self.field.getSpawnPos() is not None:
                     pass
                 else:
-                    self.networkHandler.unicast()
+                    answer = snakes.GameMessage()
+                    answer.msg_seq = message.msg_seq + 1
+                    answer.error.error_message = "Could not find space on field."
+                    self.networkHandler.unicast(answer, datagram.senderAddress(), datagram.senderPort())
 
     def adjustTableSize(self):
         width = self.avaliableGamesTable.width()
