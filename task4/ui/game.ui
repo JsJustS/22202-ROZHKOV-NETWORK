@@ -16,7 +16,7 @@
   <layout class="QGridLayout" name="gridLayout_2">
    <item row="0" column="0">
     <layout class="QGridLayout" name="gridLayout">
-     <item row="0" column="0" rowspan="9">
+     <item row="0" column="0" rowspan="12">
       <widget class="QWidget" name="artWidget" native="true">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
@@ -26,63 +26,27 @@
        </property>
       </widget>
      </item>
-     <item row="1" column="5">
-      <widget class="QLabel" name="masterLabel">
-       <property name="maximumSize">
+     <item row="5" column="3">
+      <widget class="QPushButton" name="leaveButton">
+       <property name="text">
+        <string>LEAVE</string>
+       </property>
+      </widget>
+     </item>
+     <item row="6" column="3" rowspan="3" colspan="3">
+      <spacer name="verticalSpacer">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
         <size>
-         <width>16777215</width>
+         <width>20</width>
          <height>20</height>
         </size>
        </property>
-       <property name="text">
-        <string>MASTER: Player</string>
-       </property>
-      </widget>
+      </spacer>
      </item>
-     <item row="1" column="3" rowspan="4" colspan="2">
-      <widget class="QListWidget" name="ratingList"/>
-     </item>
-     <item row="2" column="5">
-      <widget class="QLabel" name="sizeLabel">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
-       <property name="text">
-        <string>SIZE: 5x5</string>
-       </property>
-      </widget>
-     </item>
-     <item row="3" column="5">
-      <widget class="QLabel" name="foodLabel">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
-       <property name="text">
-        <string>FOOD: 3 + 1</string>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="5">
-      <widget class="QLabel" name="label_2">
-       <property name="text">
-        <string>SERVER</string>
-       </property>
-      </widget>
-     </item>
-     <item row="5" column="5">
-      <widget class="QPushButton" name="hostButton">
-       <property name="text">
-        <string>HOST NEW GAME</string>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="3" colspan="2">
+     <item row="0" column="3" colspan="3">
       <widget class="QLabel" name="label">
        <property name="maximumSize">
         <size>
@@ -95,14 +59,10 @@
        </property>
       </widget>
      </item>
-     <item row="5" column="3">
-      <widget class="QPushButton" name="leaveButton">
-       <property name="text">
-        <string>LEAVE</string>
-       </property>
-      </widget>
+     <item row="1" column="3" rowspan="4" colspan="3">
+      <widget class="QListWidget" name="ratingList"/>
      </item>
-     <item row="0" column="1" rowspan="8">
+     <item row="0" column="1" rowspan="12">
       <spacer name="horizontalSpacer">
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
@@ -118,61 +78,50 @@
        </property>
       </spacer>
      </item>
-     <item row="6" column="3" colspan="3">
-      <spacer name="verticalSpacer">
-       <property name="orientation">
-        <enum>Qt::Vertical</enum>
+     <item row="5" column="4" colspan="2">
+      <widget class="QPushButton" name="hostButton">
+       <property name="text">
+        <string>HOST NEW GAME</string>
        </property>
-       <property name="sizeHint" stdset="0">
+      </widget>
+     </item>
+     <item row="9" column="3" colspan="3">
+      <widget class="QLabel" name="masterLabel">
+       <property name="maximumSize">
         <size>
-         <width>20</width>
+         <width>16777215</width>
          <height>20</height>
         </size>
        </property>
-      </spacer>
+       <property name="text">
+        <string>MASTER: Player</string>
+       </property>
+      </widget>
      </item>
-     <item row="7" column="3" rowspan="2" colspan="3">
-      <widget class="QTableWidget" name="avaliableGamesTable">
-       <column>
-        <property name="text">
-         <string>Master</string>
-        </property>
-        <property name="font">
-         <font>
-          <bold>true</bold>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Players</string>
-        </property>
-        <property name="font">
-         <font>
-          <bold>true</bold>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Size</string>
-        </property>
-        <property name="font">
-         <font>
-          <bold>true</bold>
-         </font>
-        </property>
-       </column>
-       <column>
-        <property name="text">
-         <string>Food</string>
-        </property>
-        <property name="font">
-         <font>
-          <bold>true</bold>
-         </font>
-        </property>
-       </column>
+     <item row="10" column="3" colspan="3">
+      <widget class="QLabel" name="sizeLabel">
+       <property name="maximumSize">
+        <size>
+         <width>16777215</width>
+         <height>20</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>SIZE: 5x5</string>
+       </property>
+      </widget>
+     </item>
+     <item row="11" column="3" colspan="3">
+      <widget class="QLabel" name="foodLabel">
+       <property name="maximumSize">
+        <size>
+         <width>16777215</width>
+         <height>20</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>FOOD: 3 + 1</string>
+       </property>
       </widget>
      </item>
     </layout>

@@ -14,7 +14,7 @@ import random
 
 from settings import ServerSettingsWindow
 from network import NetworkHandler, Subscriber
-from game import GameWidget
+from game import GameWidget, GameServer
 
 
 class ClientWindow(QWidget, Subscriber):
@@ -59,6 +59,7 @@ class ClientWindow(QWidget, Subscriber):
         self.joinServer(data["host"], data["port"], data["game"])
 
     def adjustTableSize(self):
+        # todo: update player count
         width = self.avaliableGamesTable.width()
         self.avaliableGamesTable.setColumnWidth(0, int(width / 100 * 40) - 1)
         self.avaliableGamesTable.setColumnWidth(1, int(width / 100 * 20) - 1)
@@ -96,7 +97,7 @@ class ClientWindow(QWidget, Subscriber):
                 self.games.pop(i)
                 self.avaliableGamesTable.removeRow(name_to_row[i])
         except Exception as e:
-            print(e)
+            print("adjustTableSize", e, type(e))
 
     def notify(self, datagram: QNetworkDatagram):
         try:
@@ -119,22 +120,29 @@ class ClientWindow(QWidget, Subscriber):
                 case "ack":
                     my_id = message.receiver_id
                     self.startGame(my_id)
+                case "error":
+                    logging.error(message.error.error_message)
         except Exception as e:
-            print(e)
+            print("notify", e)
 
     def startGame(self, my_id: int):
         try:
             if self.trying_to_join is None:
                 return
             game = self.games[self.trying_to_join]["game"]
+            print("my_id", my_id)
             gameWindow = GameWidget(
                 self,
-                game.game_name,
-                snakes.GameConfig(
-                    width=game.config.width,
-                    height=game.config.height,
-                    food_static=game.config.food_static,
-                    state_delay_ms=game.config.state_delay_ms
+                GameServer(
+                    self.games[self.trying_to_join]["host"],
+                    self.games[self.trying_to_join]["port"],
+                    game.game_name,
+                    snakes.GameConfig(
+                        width=game.config.width,
+                        height=game.config.height,
+                        food_static=game.config.food_static,
+                        state_delay_ms=game.config.state_delay_ms
+                    )
                 ),
                 self.networkHandler,
                 my_id
@@ -142,7 +150,8 @@ class ClientWindow(QWidget, Subscriber):
 
             self.hide()
         except Exception as e:
-            print(e)
+            print("startGame_main", e)
+
     def loadUserConfig(self):
         if not os.path.exists("user_conf.json"):
             self.applyBaseConfig()

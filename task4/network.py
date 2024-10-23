@@ -7,7 +7,7 @@ from PyQt6.QtNetwork import QUdpSocket, QAbstractSocket, QHostAddress, QNetworkD
 
 class Subscriber:
 
-    def notify(self, message: snakes.GameMessage):
+    def notify(self, datagram: QNetworkDatagram):
         pass
 
 
@@ -33,8 +33,6 @@ class NetworkHandler:
         self.multicast_socket.joinMulticastGroup(QHostAddress(self.MULTICAST_GROUP))
         self.multicast_socket.readyRead.connect(self.processMulticastDatagram)
 
-        # self.direct_socket.writeDatagram(b"hello world", QHostAddress(self.host), self.direct_socket.localPort())
-
     @property
     def port(self):
         return self.direct_socket.localPort()
@@ -52,7 +50,7 @@ class NetworkHandler:
                 datagram = self.direct_socket.receiveDatagram()
                 self.notifySubscribers(datagram)
         except Exception as e:
-            print(e)
+            print("processP2PDatagram", e)
 
     def processMulticastDatagram(self):
         try:
@@ -60,7 +58,7 @@ class NetworkHandler:
                 datagram = self.multicast_socket.receiveDatagram()
                 self.notifySubscribers(datagram)
         except Exception as e:
-            print(e)
+            print("processMulticastDatagram", e)
 
     def subscribe(self, subscriber: Subscriber):
         self._subscribers.append(subscriber)

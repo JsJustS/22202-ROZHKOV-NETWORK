@@ -78,12 +78,16 @@ class ServerSettingsWindow(QWidget):
         try:
             gameWindow = game.GameWidget(
                 self.client,
-                self.serverNameLine.text(),
-                snakes.GameConfig(
-                    width=self.widthBox.value(),
-                    height=self.heightBox.value(),
-                    food_static=self.foodBox.value(),
-                    state_delay_ms=self.delayBox.value()
+                game.GameServer(
+                    self.client.networkHandler.host,
+                    self.client.networkHandler.port,
+                    self.serverNameLine.text(),
+                    snakes.GameConfig(
+                        width=self.widthBox.value(),
+                        height=self.heightBox.value(),
+                        food_static=self.foodBox.value(),
+                        state_delay_ms=self.delayBox.value()
+                    )
                 ),
                 self.client.networkHandler
             )
@@ -91,7 +95,7 @@ class ServerSettingsWindow(QWidget):
             self.hide()
             self.client.hide()
         except Exception as e:
-            print(e)
+            print("startGame_settings", e)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         self.client.playerNameLine.setEnabled(True)
