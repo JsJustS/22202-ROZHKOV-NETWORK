@@ -1,4 +1,5 @@
 from PyQt6.QtCore import pyqtSignal, QTimer
+from PyQt6.QtNetwork import QNetworkDatagram
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QKeyEvent
 from qtpy import uic
@@ -11,37 +12,38 @@ from network import NetworkHandler, Subscriber
 class GameWidget(QWidget, Subscriber):
     keyPressed = pyqtSignal(QKeyEvent)
 
-    def __init__(self, client: QWidget, server_name: str, settings: snakes.GameConfig, networkHandler: NetworkHandler, is_host: bool = True):
+    def __init__(self, client: QWidget, server_name: str, settings: snakes.GameConfig, networkHandler: NetworkHandler, client_id: int = 0):
         super().__init__()
         self.ui = uic.loadUi('ui/game.ui', self)
 
         self.server_name = server_name
         self.setWindowTitle(self.server_name + " | Snakes")
         self.settings = settings
+        self.networkHandler = networkHandler
+        self.networkHandler.subscribe(self)
 
         # <host variables>
         self.announcementTimer = None
         self.snake_last_id = 0
-        if is_host:
+        if client_id == 0:
             self.becomeMaster()
         # </host variables>
 
         self.client = client
         self.player = snakes.GamePlayer(
             name=self.client.playerNameLine.text(),
-            id=self.snake_last_id,  # fix later
-            role=snakes.NodeRole.MASTER if is_host else snakes.NodeRole.NORMAL,
+            id=client_id,  # fix later
+            port=self.networkHandler.port,
+            role=snakes.NodeRole.MASTER if client_id == 0 else snakes.NodeRole.NORMAL,
             score=0
         )
-        self.networkHandler = networkHandler
-        self.networkHandler.subscribe(self)
 
 
         # update later
         self.client_snake = Snake(self.player)
         self.snake_last_id += 1
 
-        self.field = FieldWidget(self.artWidget, self, settings, self.client_snake)
+        self.field = FieldWidget(self.artWidget, self, settings, self.client_snake, client_id == 0)
 
         # self.leaveButton.clicked.connect(self.returnToClient)
         self.hostButton.clicked.connect(self.openServerSettings)
@@ -49,6 +51,21 @@ class GameWidget(QWidget, Subscriber):
         self.keyPressed.connect(self.onKey)
 
         self.show()
+
+    def notify(self, datagram: QNetworkDatagram):
+        match message.WhichOneof("Type"):
+            case "join":
+                if self.field.getSpawnPos() is not None:
+                    pass
+                else:
+                    self.networkHandler.unicast()
+
+    def adjustTableSize(self):
+        width = self.avaliableGamesTable.width()
+        self.avaliableGamesTable.setColumnWidth(0, int(width / 100 * 40) - 1)
+        self.avaliableGamesTable.setColumnWidth(1, int(width / 100 * 20) - 1)
+        self.avaliableGamesTable.setColumnWidth(2, int(width / 100 * 20) - 1)
+        self.avaliableGamesTable.setColumnWidth(3, int(width / 100 * 20))
 
     def becomeMaster(self):
         try:
@@ -61,7 +78,7 @@ class GameWidget(QWidget, Subscriber):
 
     def stopBeingMaster(self):
         try:
-            self.role = snakes.NodeRole.VIEWER
+            self.player.role = snakes.NodeRole.VIEWER
             if self.announcementTimer is not None:
                 self.announcementTimer.stop()
         except Exception as e:
@@ -119,6 +136,7 @@ class GameWidget(QWidget, Subscriber):
     def paintEvent(self, event):
         try:
             self.field.draw()
+            self.adjustTableSize()
         except Exception as e:
             print(e)
 
@@ -188,7 +206,7 @@ class Snake:
 
 
 class FieldWidget:
-    def __init__(self, canvas: QWidget, parent: QWidget, settings: snakes.GameConfig, client_snake: Snake):
+    def __init__(self, canvas: QWidget, parent: QWidget, settings: snakes.GameConfig, client_snake: Snake, is_host: bool):
         self.canvas = canvas
         self.parent = parent
         self.settings = settings
@@ -201,7 +219,8 @@ class FieldWidget:
         self.timer = QTimer()
         self.timer.timeout.connect(self.tick)
         self.timer.setSingleShot(False)
-        self.timer.start(self.settings.state_delay_ms)
+        if is_host:
+            self.timer.start(self.settings.state_delay_ms)
 
     def tick(self):
         try:
