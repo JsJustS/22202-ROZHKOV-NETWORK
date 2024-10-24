@@ -31,14 +31,21 @@ class ClientWindow(QWidget, Subscriber):
         self.playerNameLine.editingFinished.connect(self.saveUserConfig)
         self.hostButton.clicked.connect(self.openServerSettingsScreen)
         self.avaliableGamesTable.cellDoubleClicked.connect(self.onServerDoubleClick)
+        self.modeButton.clicked.connect(self.changeConnectionMode)
 
         self.networkHandler = NetworkHandler()
         self.networkHandler.subscribe(self)
 
+        self.gameWidget = None
         self.games = dict()
         self.trying_to_join = None
 
         self.show()
+
+    def changeConnectionMode(self):
+        viewer = "MODE: VIEVER"
+        normal = "MODE: NORMAL"
+        self.modeButton.setText(viewer if self.modeButton.text() == normal else normal)
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -56,7 +63,7 @@ class ClientWindow(QWidget, Subscriber):
         name = self.avaliableGamesTable.item(row, 0).text()
         data = self.games[name]
         self.trying_to_join = name
-        self.joinServer(data["host"], data["port"], data["game"])
+        self.joinServer(data["host"], data["port"], data["game"], self.modeButton.text() == "MODE: NORMAL")
 
     def adjustTableSize(self):
         # todo: update player count
@@ -118,6 +125,8 @@ class ClientWindow(QWidget, Subscriber):
                             "last_update": time.time_ns()
                         }
                 case "ack":
+                    if self.gameWidget is not None:
+                        return
                     my_id = message.receiver_id
                     self.startGame(my_id)
                 case "error":
@@ -131,7 +140,7 @@ class ClientWindow(QWidget, Subscriber):
                 return
             game = self.games[self.trying_to_join]["game"]
             print("my_id", my_id)
-            gameWindow = GameWidget(
+            self.gameWidget = GameWidget(
                 self,
                 GameServer(
                     self.games[self.trying_to_join]["host"],
