@@ -1,5 +1,7 @@
+import time
+
 from PyQt6.QtCore import pyqtSignal, QTimer
-from PyQt6.QtNetwork import QNetworkDatagram
+from PyQt6.QtNetwork import QNetworkDatagram, QHostAddress
 from PyQt6.QtWidgets import QWidget, QListWidgetItem
 from PyQt6.QtGui import QPainter, QColor, QKeyEvent
 from google.protobuf.internal.containers import RepeatedCompositeFieldContainer
@@ -80,7 +82,11 @@ class GameWidget(QWidget, Subscriber):
         self.ackTimer = QTimer()
         self.ackTimer.setSingleShot(False)
         self.ackTimer.timeout.connect(self.resendMessages)
-        self.ackTimer.start(self.server.settings.state_delay_ms // 10)
+        self.pingTimer = QTimer()
+        self.pingTimer.setSingleShot(False)
+        self.pingTimer.timeout.connect(self.ping)
+        self.pingTimer.start(self.server.settings.state_delay_ms // 10)
+        self.pingData = dict()
 
         self.state_order = 0
 
@@ -110,7 +116,9 @@ class GameWidget(QWidget, Subscriber):
                     requested_role=snakes.NodeRole.MASTER
                 )
             )
-            self.networkHandler.unicast(joinMsg, self.networkHandler.host, self.networkHandler.port)
+            self.unicast(joinMsg, self.networkHandler.host, self.networkHandler.port)
+
+            self.ackTimer.start(self.server.settings.state_delay_ms // 10)
         # </host variables>
 
         # self.leaveButton.clicked.connect(self.returnToClient)
@@ -118,6 +126,45 @@ class GameWidget(QWidget, Subscriber):
 
         self.show()
         self.sizeLabel.setText(f"SIZE: {self.server.settings.width}x{self.server.settings.height}")
+
+    def unicast(self, message: snakes.GameMessage, host: str, port: int):
+        if type(host) is not str:
+            host = host.toString()
+
+        host = QHostAddress(host).toString().replace("::ffff:", "")
+        self.networkHandler.unicast(message, host, port)
+
+        if host not in self.pingData.keys():
+            self.pingData[host] = {
+                "last_sent": 0,
+                "last_got": 0
+            }
+        self.pingData[host]["last_sent"] = time.time_ns()
+
+    def ping(self):
+        current_time = time.time_ns()
+        for player in self.players:
+            player_ip = QHostAddress(player.ip_address).toString().replace("::ffff:", "")
+            if player_ip not in self.pingData.keys():
+                self.pingData[player_ip] = {
+                    "last_sent": 0,
+                    "last_got": current_time
+                }
+            if current_time - self.pingData[player_ip]["last_sent"] > self.server.settings.state_delay_ms // 10 * 1e6:
+                message = snakes.GameMessage(
+                    msg_seq=self.msg_seq,
+                    receiver_id=player.id,
+                    sender_id=self.player.id,
+                    ping=snakes.GameMessage.PingMsg()
+                )
+                self.messagesWithoutAck[message.msg_seq] = message
+                self.unicast(message, player.ip_address, player.port)
+
+            if current_time - self.pingData[player_ip]["last_got"] > self.server.settings.state_delay_ms * 0.8 * 1e6:
+                # ALERT ALERT HES DEAD LMAO
+                print(current_time - self.pingData[player_ip]["last_got"], self.server.settings.state_delay_ms * 0.8 * 1e6, self.pingData)
+                # print(f"{player_ip} died lmao", self.pingData[player_ip]["last_got"])
+                pass
 
     @property
     def msg_seq(self):
@@ -151,9 +198,10 @@ class GameWidget(QWidget, Subscriber):
     def acknowledge(self, datagram: QNetworkDatagram, message: snakes.GameMessage = None, receiver_id: int = None):
         answer = snakes.GameMessage(ack=snakes.GameMessage.AckMsg())
         answer.msg_seq = message.msg_seq if message is not None else 0
-        answer.receiver_id = receiver_id if receiver_id is not None else (message.sender_id if message is not None else 0)
+        answer.receiver_id = receiver_id if receiver_id is not None else (
+            message.sender_id if message is not None else 0)
         answer.sender_id = self.player.id
-        self.networkHandler.unicast(answer, datagram.senderAddress(), datagram.senderPort())
+        self.unicast(answer, datagram.senderAddress().toString(), datagram.senderPort())
 
     def sendGameState(self):
         message = snakes.GameMessage(
@@ -176,7 +224,7 @@ class GameWidget(QWidget, Subscriber):
         )
 
         for player in self.players:
-            self.networkHandler.unicast(message, player.ip_address, player.port)
+            self.unicast(message, player.ip_address, player.port)
         self.state_order += 1
 
     def notify(self, datagram: QNetworkDatagram):
@@ -191,13 +239,13 @@ class GameWidget(QWidget, Subscriber):
                 if pos is not None:
                     self.acknowledge(datagram=datagram, message=message, receiver_id=self.player_last_id)
                     player = snakes.GamePlayer(
-                            name=message.join.player_name,
-                            id=self.player_last_id,
-                            ip_address=datagram.senderAddress().toString(),
-                            port=datagram.senderPort(),
-                            role=snakes.NodeRole.VIEWER if message.join.requested_role == snakes.NodeRole.VIEWER else snakes.NodeRole.NORMAL,
-                            type=snakes.PlayerType.HUMAN,
-                            score=0
+                        name=message.join.player_name,
+                        id=self.player_last_id,
+                        ip_address=datagram.senderAddress().toString(),
+                        port=datagram.senderPort(),
+                        role=snakes.NodeRole.VIEWER if message.join.requested_role == snakes.NodeRole.VIEWER else snakes.NodeRole.NORMAL,
+                        type=snakes.PlayerType.HUMAN,
+                        score=0
                     )
 
                     # erm...
@@ -218,7 +266,7 @@ class GameWidget(QWidget, Subscriber):
                 else:
                     answer = snakes.GameMessage(error=snakes.GameMessage.ErrorMsg("Could not find space on field."))
                     answer.msg_seq = message.msg_seq
-                    self.networkHandler.unicast(answer, datagram.senderAddress(), datagram.senderPort())
+                    self.unicast(answer, datagram.senderAddress(), datagram.senderPort())
 
             case "steer":
                 ss = list(filter(lambda x: x.player.id == message.sender_id, self.field.snakes))
@@ -228,58 +276,69 @@ class GameWidget(QWidget, Subscriber):
                     snakes.Direction.LEFT: snakes.Direction.RIGHT,
                     snakes.Direction.RIGHT: snakes.Direction.LEFT,
                 }
-                if len(ss) < 1:
-                    return
-                for s in ss:
-                    if steer_block[message.steer.direction] != s.direction:
-                        s.direction = message.steer.direction
-                self.acknowledge(datagram=datagram, message=message)
+                if len(ss) > 0:
+                    for s in ss:
+                        if steer_block[message.steer.direction] != s.direction:
+                            s.direction = message.steer.direction
+                    self.acknowledge(datagram=datagram, message=message)
 
             case "discover":
                 self.sendAnnouncementMsg((datagram.senderAddress(), datagram.senderPort()))
 
             # client
+            case "announcement":
+                return
+
+            case "ping":
+                pass
+
             case "ack":
                 self.player.id = message.receiver_id
                 if message.msg_seq in self.messagesWithoutAck.keys():
                     self.messagesWithoutAck.pop(message.msg_seq)
 
             case "state":
-                if message.state.state.state_order <= self.state_order:
-                    return
+                if message.state.state.state_order > self.state_order:
+                    self.field.food = [(c.x, c.y) for c in message.state.state.foods]
 
-                self.field.food = [(c.x, c.y) for c in message.state.state.foods]
+                    for player in message.state.state.players.players:
+                        for old_player in self.players:
+                            if player.id == old_player.id:
+                                old_player.name = player.name
+                                old_player.ip_address = player.ip_address
+                                old_player.port = player.port
+                                old_player.role = player.role
+                                old_player.type = player.type
+                                old_player.score = player.score
+                                break
+                        else:
+                            self.players.append(player)
 
-                for player in message.state.state.players.players:
-                    for old_player in self.players:
-                        if player.id == old_player.id:
-                            old_player.name = player.name
-                            old_player.ip_address = player.ip_address
-                            old_player.port = player.port
-                            old_player.role = player.role
-                            old_player.type = player.type
-                            old_player.score = player.score
-                            break
-                    else:
-                        self.players.append(player)
+                    alive_ids = set()
+                    for snake in message.state.state.snakes:
+                        alive_ids.add(snake.player_id)
+                        for old_snake in self.field.snakes:
+                            if old_snake.player.id == snake.player_id:
+                                old_snake.direction = snake.head_direction
+                                self.keyPointsToSnake(snake.points, old_snake)
+                                break
+                        else:
+                            new_snake = Snake(
+                                player=list(filter(lambda x: x.id == snake.player_id, self.players))[0],
+                                direction=snake.head_direction
+                            )
+                            self.keyPointsToSnake(snake.points, new_snake)
+                            self.field.snakes.append(new_snake)
+                    self.field.snakes = list(filter(lambda x: x.player.id in alive_ids, self.field.snakes))
+                    self.update()
 
-                alive_ids = set()
-                for snake in message.state.state.snakes:
-                    alive_ids.add(snake.player_id)
-                    for old_snake in self.field.snakes:
-                        if old_snake.player.id == snake.player_id:
-                            old_snake.direction = snake.head_direction
-                            self.keyPointsToSnake(snake.points, old_snake)
-                            break
-                    else:
-                        new_snake = Snake(
-                            player=list(filter(lambda x: x.id == snake.player_id, self.players))[0],
-                            direction=snake.head_direction
-                        )
-                        self.keyPointsToSnake(snake.points, new_snake)
-                        self.field.snakes.append(new_snake)
-                self.field.snakes = list(filter(lambda x: x.player.id in alive_ids, self.field.snakes))
-                self.update()
+        address = datagram.senderAddress().toString().replace("::ffff:", "")
+        if address not in self.pingData.keys():
+            self.pingData[address] = {
+                "last_sent": 0,
+                "last_got": 0
+            }
+        self.pingData[address]["last_got"] = time.time_ns()
 
     def becomeMaster(self):
         try:
@@ -328,7 +387,7 @@ class GameWidget(QWidget, Subscriber):
             if address is None:
                 self.networkHandler.multicast(message)
             else:
-                self.networkHandler.unicast(message, address[0], address[1])
+                self.unicast(message, address[0], address[1])
         except Exception as e:
             print("sendAnnouncementMsg", e)
 
@@ -337,6 +396,8 @@ class GameWidget(QWidget, Subscriber):
         self.stopBeingMaster()
         super().closeEvent(event)
         self.field.timer.stop()
+        self.ackTimer.stop()
+        self.pingTimer.stop()
         self.client.gameWidget = None
 
     def returnToClient(self):
@@ -349,7 +410,9 @@ class GameWidget(QWidget, Subscriber):
     def paintEvent(self, event):
         try:
             self.field.draw()
-            self.masterLabel.setText(f"MASTER: {list(filter(lambda x: x.role == snakes.NodeRole.MASTER, self.players))[0].name}")
+            masters = list(filter(lambda x: x.role == snakes.NodeRole.MASTER, self.players))
+            if len(masters) > 0:
+                self.masterLabel.setText(f"MASTER: {masters[0].name}")
             self.foodLabel.setText(f"FOOD: {self.server.settings.food_static} + {len(self.field.snakes)}")
 
             self.ratingList.clear()
@@ -379,7 +442,7 @@ class GameWidget(QWidget, Subscriber):
                 )
             )
             self.messagesWithoutAck[message.msg_seq] = message
-            self.networkHandler.unicast(message, self.server.host, self.server.port)
+            self.unicast(message, self.server.host, self.server.port)
 
 
 class FieldWidget:
@@ -402,7 +465,8 @@ class FieldWidget:
             self.timer.start(self.settings.state_delay_ms)
 
     def addSnake(self, x: int, y: int, player: snakes.GamePlayer):
-        snake = Snake(player, x=x, y=y, direction=random.choice([snakes.Direction.UP, snakes.Direction.DOWN, snakes.Direction.LEFT, snakes.Direction.RIGHT]))
+        snake = Snake(player, x=x, y=y, direction=random.choice(
+            [snakes.Direction.UP, snakes.Direction.DOWN, snakes.Direction.LEFT, snakes.Direction.RIGHT]))
         self.snakes.append(snake)
 
     def tick(self):

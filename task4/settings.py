@@ -76,7 +76,7 @@ class ServerSettingsWindow(QWidget):
 
     def startGame(self):
         try:
-            gameWindow = game.GameWidget(
+            self.client.gameWidget = game.GameWidget(
                 self.client,
                 game.GameServer(
                     self.client.networkHandler.host,
