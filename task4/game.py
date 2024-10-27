@@ -105,7 +105,7 @@ class GameWidget(QWidget, Subscriber):
 
         # <host variables>
         self.announcementTimer = None
-        self.players = list()
+        self.players = [self.player]
         self.player_last_id = 0
         if client_id == 0:
             self.becomeMaster()
@@ -168,8 +168,9 @@ class GameWidget(QWidget, Subscriber):
         try:
             to_be_deleted = list()
             current_time = time.time_ns()
-            if self.player.role == snakes.NodeRole.DEPUTY:
-                print(self.players)
+            # if self.player.role == snakes.NodeRole.DEPUTY:
+            #     # print(self.players)
+            # pass
             for player in self.players:
                 player_key = player.id
                 if player.id == self.player.id and self.player.role != snakes.NodeRole.MASTER:
@@ -194,6 +195,7 @@ class GameWidget(QWidget, Subscriber):
                         deputies = list(filter(lambda x: x.role == snakes.NodeRole.DEPUTY, self.players))
                         if len(deputies) != 1:
                             logging.warn(f"MASTER fell off, but {len(deputies)} DEPUTY found. Something is wrong...")
+                            to_be_deleted.append(player)
                             continue
                         deputy = deputies[0]
                         self.server.host = deputy.ip_address
@@ -204,7 +206,7 @@ class GameWidget(QWidget, Subscriber):
                         normals = list(filter(lambda x: x.role == snakes.NodeRole.NORMAL, self.players))
                         if len(normals) < 1:
                             logging.warn(f"DEPUTY fell off, but {len(normals)} NORMAL found. Something is wrong...")
-                            print(self.players)
+                            to_be_deleted.append(player)
                             continue
                         new_deputy = random.choice(normals)
                         new_deputy.role = snakes.NodeRole.DEPUTY
@@ -227,6 +229,7 @@ class GameWidget(QWidget, Subscriber):
                         if len(normals) < 1:
                             logging.warn(f"MASTER fell off, I AM DEPUTY, but {len(normals)} "
                                          f"NORMAL found. Something is wrong...")
+                            to_be_deleted.append(player)
                             continue
                         new_deputy = random.choice(normals)
                         new_deputy.role = snakes.NodeRole.DEPUTY
@@ -339,17 +342,18 @@ class GameWidget(QWidget, Subscriber):
                 pos = self.field.getPosForNewSnake()
                 if pos is not None:
                     self.acknowledge(datagram=datagram, message=message, receiver_id=self.player_last_id)
+                    deputies = list(filter(lambda x: x.role == snakes.NodeRole.DEPUTY, self.players))
                     player = snakes.GamePlayer(
                         name=message.join.player_name,
                         id=self.player_last_id,
                         ip_address=datagram.senderAddress().toString(),
                         port=datagram.senderPort(),
-                        role=snakes.NodeRole.VIEWER if message.join.requested_role == snakes.NodeRole.VIEWER else (snakes.NodeRole.NORMAL if len(self.players) != 1 else snakes.NodeRole.DEPUTY),
+                        role=snakes.NodeRole.VIEWER if message.join.requested_role == snakes.NodeRole.VIEWER else (snakes.NodeRole.DEPUTY if len(deputies) < 1 else snakes.NodeRole.NORMAL),
                         type=snakes.PlayerType.HUMAN,
                         score=0
                     )
-                    print(f"new player with role {player.role} joined")
-                    if player.role == snakes.NodeRole.DEPUTY:
+                    logging.info(f"new player with role {player.role} joined")
+                    if player.role == snakes.NodeRole.DEPUTY and player.id != self.player.id:
                         roleChangingMessage = snakes.GameMessage(
                             msg_seq=self.msg_seq,
                             sender_id=self.player.id,
@@ -363,17 +367,13 @@ class GameWidget(QWidget, Subscriber):
                         self.updatePingData(player.id, sent=True)
 
                     # erm...
-                    if len(self.players) == 0:
-                        self.player.name = player.name
-                        self.player.id = player.id
-                        self.player.ip_address = player.ip_address
-                        self.player.port = player.port
-                        self.player.role = snakes.NodeRole.MASTER
-                        self.player.type = player.type
-                        self.player.score = player.score
-                        player = self.player
+                    for pl in self.players:
+                        if pl.id == player.id:
+                            player = pl
+                            break
+                    else:
+                        self.players.append(player)
 
-                    self.players.append(player)
                     if message.join.requested_role != snakes.NodeRole.VIEWER:
                         self.field.addSnake(pos[0], pos[1], player)
                     self.player_last_id += 1
@@ -408,6 +408,7 @@ class GameWidget(QWidget, Subscriber):
 
             case "ping":
                 self.updatePingData(message.sender_id, got=True)
+                self.acknowledge(datagram, message=message)
 
             case "ack":
                 self.updatePingData(message.sender_id, got=True)
@@ -429,7 +430,7 @@ class GameWidget(QWidget, Subscriber):
             case "state":
                 self.updatePingData(message.sender_id, got=True)
                 if message.state.state.state_order > self.state_order:
-                    self.field.food = [(c.x, c.y) for c in message.state.state.foods]
+                    self.field.food = set([(c.x, c.y) for c in message.state.state.foods])
                     print("===")
                     for player in message.state.state.players.players:
                         for old_player in self.players:
