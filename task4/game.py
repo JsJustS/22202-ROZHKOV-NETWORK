@@ -1,3 +1,4 @@
+import logging
 import time
 
 from PyQt6.QtCore import pyqtSignal, QTimer
@@ -23,11 +24,12 @@ class GameServer:
 class Snake:
 
     def __init__(self, player: snakes.GamePlayer, x: int = 0, y: int = 0,
-                 direction: snakes.Direction = snakes.Direction.UP):
+                 direction: snakes.Direction = snakes.Direction.UP, state=snakes.GameState.Snake.SnakeState.ALIVE):
         self.x = x
         self.y = y
         self.player = player
         self.direction = direction
+        self.state = state
 
         self.tail = list()
         # Координаты змейки обновляются и приводятся к координатам тора на поле
@@ -99,7 +101,7 @@ class GameWidget(QWidget, Subscriber):
             score=0
         )
 
-        self.field = FieldWidget(self.artWidget, self, self.server.settings, client_id, client_id == 0)
+        self.field = FieldWidget(self.artWidget, self, self.server.settings, client_id)
 
         # <host variables>
         self.announcementTimer = None
@@ -127,6 +129,34 @@ class GameWidget(QWidget, Subscriber):
         self.show()
         self.sizeLabel.setText(f"SIZE: {self.server.settings.width}x{self.server.settings.height}")
 
+    def updatePingData(self, key, sent=False, got=False):
+        try:
+            current_time = time.time_ns()
+            if key not in self.pingData.keys():
+                self.pingData[key] = {
+                    "last_sent": 0,
+                    "last_got": 0
+                }
+            if sent:
+                self.pingData[key]["last_sent"] = current_time
+            if got:
+                self.pingData[key]["last_got"] = current_time
+        except Exception as e:
+            print("updatePingData", e)
+
+    def retrievePingData(self, key, sent=True) -> int:
+        try:
+            if key not in self.pingData.keys():
+                self.pingData[key] = {
+                    "last_sent": 0,
+                    "last_got": time.time_ns()
+                }
+            if sent:
+                return self.pingData[key]["last_sent"]
+            return self.pingData[key]["last_got"]
+        except Exception as e:
+            print("retrievePingData", e)
+
     def unicast(self, message: snakes.GameMessage, host: str, port: int):
         if type(host) is not str:
             host = host.toString()
@@ -134,37 +164,106 @@ class GameWidget(QWidget, Subscriber):
         host = QHostAddress(host).toString().replace("::ffff:", "")
         self.networkHandler.unicast(message, host, port)
 
-        if host not in self.pingData.keys():
-            self.pingData[host] = {
-                "last_sent": 0,
-                "last_got": 0
-            }
-        self.pingData[host]["last_sent"] = time.time_ns()
-
     def ping(self):
-        current_time = time.time_ns()
-        for player in self.players:
-            player_ip = QHostAddress(player.ip_address).toString().replace("::ffff:", "")
-            if player_ip not in self.pingData.keys():
-                self.pingData[player_ip] = {
-                    "last_sent": 0,
-                    "last_got": current_time
-                }
-            if current_time - self.pingData[player_ip]["last_sent"] > self.server.settings.state_delay_ms // 10 * 1e6:
-                message = snakes.GameMessage(
-                    msg_seq=self.msg_seq,
-                    receiver_id=player.id,
-                    sender_id=self.player.id,
-                    ping=snakes.GameMessage.PingMsg()
-                )
-                self.messagesWithoutAck[message.msg_seq] = message
-                self.unicast(message, player.ip_address, player.port)
+        try:
+            to_be_deleted = list()
+            current_time = time.time_ns()
+            if self.player.role == snakes.NodeRole.DEPUTY:
+                print(self.players)
+            for player in self.players:
+                player_key = player.id
+                if player.id == self.player.id and self.player.role != snakes.NodeRole.MASTER:
+                    continue
+                if current_time - self.retrievePingData(player_key, sent=True) > self.server.settings.state_delay_ms // 10 * 1e6:
+                    message = snakes.GameMessage(
+                        msg_seq=self.msg_seq,
+                        receiver_id=player.id,
+                        sender_id=self.player.id,
+                        ping=snakes.GameMessage.PingMsg()
+                    )
+                    self.messagesWithoutAck[message.msg_seq] = message
+                    self.unicast(message, player.ip_address, player.port)
+                    self.updatePingData(player_key, sent=True)
 
-            if current_time - self.pingData[player_ip]["last_got"] > self.server.settings.state_delay_ms * 0.8 * 1e6:
-                # ALERT ALERT HES DEAD LMAO
-                print(current_time - self.pingData[player_ip]["last_got"], self.server.settings.state_delay_ms * 0.8 * 1e6, self.pingData)
-                # print(f"{player_ip} died lmao", self.pingData[player_ip]["last_got"])
-                pass
+                if current_time - self.retrievePingData(player_key, sent=False) > self.server.settings.state_delay_ms * 0.8 * 1e6:
+                    print(f"My name and role: {self.player.name} & {self.player.role} | fell off: {player.name} & {player.role}")
+                    # ALERT ALERT HES DEAD LMAO
+                    # Situation A. NORMAL sees MASTER fell off
+                    if self.player.role == snakes.NodeRole.NORMAL and player.role == snakes.NodeRole.MASTER:
+                        # find DEPUTY
+                        deputies = list(filter(lambda x: x.role == snakes.NodeRole.DEPUTY, self.players))
+                        if len(deputies) != 1:
+                            logging.warn(f"MASTER fell off, but {len(deputies)} DEPUTY found. Something is wrong...")
+                            continue
+                        deputy = deputies[0]
+                        self.server.host = deputy.ip_address
+                        self.server.port = deputy.port
+                    # Situation B. NEW DEPUTY
+                    elif self.player.role == snakes.NodeRole.MASTER and player.role == snakes.NodeRole.DEPUTY:
+                        # find new DEPUTY
+                        normals = list(filter(lambda x: x.role == snakes.NodeRole.NORMAL, self.players))
+                        if len(normals) < 1:
+                            logging.warn(f"DEPUTY fell off, but {len(normals)} NORMAL found. Something is wrong...")
+                            print(self.players)
+                            continue
+                        new_deputy = random.choice(normals)
+                        new_deputy.role = snakes.NodeRole.DEPUTY
+                        roleChangingMessage = snakes.GameMessage(
+                            msg_seq=self.msg_seq,
+                            sender_id=self.player.id,
+                            receiver_id=new_deputy.id,
+                            role_change=snakes.GameMessage.RoleChangeMsg(
+                                sender_role=self.player.role,
+                                receiver_role=new_deputy.role
+                            )
+                        )
+                        self.unicast(roleChangingMessage, new_deputy.ip_address, new_deputy.port)
+                        self.updatePingData(new_deputy.id, sent=True)
+                    # Situation B. NEW MASTER
+                    elif self.player.role == snakes.NodeRole.DEPUTY and player.role == snakes.NodeRole.MASTER:
+                        self.becomeMaster()
+
+                        normals = list(filter(lambda x: x.role == snakes.NodeRole.NORMAL, self.players))
+                        if len(normals) < 1:
+                            logging.warn(f"MASTER fell off, I AM DEPUTY, but {len(normals)} "
+                                         f"NORMAL found. Something is wrong...")
+                            continue
+                        new_deputy = random.choice(normals)
+                        new_deputy.role = snakes.NodeRole.DEPUTY
+                        roleChangingMessage = snakes.GameMessage(
+                            msg_seq=self.msg_seq,
+                            sender_id=self.player.id,
+                            receiver_id=new_deputy.id,
+                            role_change=snakes.GameMessage.RoleChangeMsg(
+                                sender_role=self.player.role,
+                                receiver_role=new_deputy.role
+                            )
+                        )
+                        self.unicast(roleChangingMessage, new_deputy.ip_address, new_deputy.port)
+                        self.updatePingData(new_deputy.id, sent=True)
+
+                        for pl in self.players:
+                            if pl == player:
+                                continue
+                            roleChangingMessage = snakes.GameMessage(
+                                msg_seq=self.msg_seq,
+                                sender_id=self.player.id,
+                                receiver_id=pl.id,
+                                role_change=snakes.GameMessage.RoleChangeMsg(
+                                    sender_role=self.player.role,
+                                    receiver_role=pl.role
+                                )
+                            )
+                            self.unicast(roleChangingMessage, pl.ip_address, pl.port)
+                            self.updatePingData(pl.id, sent=True)
+                    to_be_deleted.append(player)
+            for player_to_be_deleted in to_be_deleted:
+                self.players.remove(player_to_be_deleted)
+                for s in self.field.snakes:
+                    if s.player.id == player_to_be_deleted.id:
+                        s.state = snakes.GameState.Snake.SnakeState.ZOMBIE
+        except Exception as e:
+            print("ping", e)
 
     @property
     def msg_seq(self):
@@ -193,7 +292,7 @@ class GameWidget(QWidget, Subscriber):
 
     def resendMessages(self):
         for message in self.messagesWithoutAck.values():
-            pass
+            self.unicast(message, self.server.host, self.server.port)
 
     def acknowledge(self, datagram: QNetworkDatagram, message: snakes.GameMessage = None, receiver_id: int = None):
         answer = snakes.GameMessage(ack=snakes.GameMessage.AckMsg())
@@ -216,14 +315,16 @@ class GameWidget(QWidget, Subscriber):
                     snakes=[snakes.GameState.Snake(
                         player_id=snake.player.id,
                         head_direction=snake.direction,
-                        state=snakes.GameState.Snake.SnakeState.ALIVE,
+                        state=snake.state,
                         points=[snakes.GameState.Coord(x=x, y=y) for x, y in self.snakeToKeyPoints(snake)]
                     ) for snake in self.field.snakes]
                 )
             )
         )
 
+        print("===")
         for player in self.players:
+            print(player.id, player.name, player.role)
             self.unicast(message, player.ip_address, player.port)
         self.state_order += 1
 
@@ -243,10 +344,23 @@ class GameWidget(QWidget, Subscriber):
                         id=self.player_last_id,
                         ip_address=datagram.senderAddress().toString(),
                         port=datagram.senderPort(),
-                        role=snakes.NodeRole.VIEWER if message.join.requested_role == snakes.NodeRole.VIEWER else snakes.NodeRole.NORMAL,
+                        role=snakes.NodeRole.VIEWER if message.join.requested_role == snakes.NodeRole.VIEWER else (snakes.NodeRole.NORMAL if len(self.players) != 1 else snakes.NodeRole.DEPUTY),
                         type=snakes.PlayerType.HUMAN,
                         score=0
                     )
+                    print(f"new player with role {player.role} joined")
+                    if player.role == snakes.NodeRole.DEPUTY:
+                        roleChangingMessage = snakes.GameMessage(
+                            msg_seq=self.msg_seq,
+                            sender_id=self.player.id,
+                            receiver_id=player.id,
+                            role_change=snakes.GameMessage.RoleChangeMsg(
+                                sender_role=self.player.role,
+                                receiver_role=player.role
+                            )
+                        )
+                        self.unicast(roleChangingMessage, player.ip_address, player.port)
+                        self.updatePingData(player.id, sent=True)
 
                     # erm...
                     if len(self.players) == 0:
@@ -263,12 +377,14 @@ class GameWidget(QWidget, Subscriber):
                     if message.join.requested_role != snakes.NodeRole.VIEWER:
                         self.field.addSnake(pos[0], pos[1], player)
                     self.player_last_id += 1
+                    self.updatePingData(player.id, sent=True, got=True)
                 else:
                     answer = snakes.GameMessage(error=snakes.GameMessage.ErrorMsg("Could not find space on field."))
                     answer.msg_seq = message.msg_seq
                     self.unicast(answer, datagram.senderAddress(), datagram.senderPort())
 
             case "steer":
+                self.updatePingData(message.sender_id, got=True)
                 ss = list(filter(lambda x: x.player.id == message.sender_id, self.field.snakes))
                 steer_block = {
                     snakes.Direction.DOWN: snakes.Direction.UP,
@@ -281,6 +397,7 @@ class GameWidget(QWidget, Subscriber):
                         if steer_block[message.steer.direction] != s.direction:
                             s.direction = message.steer.direction
                     self.acknowledge(datagram=datagram, message=message)
+                    self.updatePingData(message.sender_id, sent=True)
 
             case "discover":
                 self.sendAnnouncementMsg((datagram.senderAddress(), datagram.senderPort()))
@@ -290,17 +407,30 @@ class GameWidget(QWidget, Subscriber):
                 return
 
             case "ping":
-                pass
+                self.updatePingData(message.sender_id, got=True)
 
             case "ack":
+                self.updatePingData(message.sender_id, got=True)
                 self.player.id = message.receiver_id
                 if message.msg_seq in self.messagesWithoutAck.keys():
                     self.messagesWithoutAck.pop(message.msg_seq)
 
+            case "role_change":
+                print(f"got role change from {message.role_change.sender_role} and i am now {message.role_change.receiver_role}")
+                self.player.role = message.role_change.receiver_role
+                players_with_id = list(filter(lambda x: x.id == message.sender_id, self.players))
+                if len(players_with_id) != 1:
+                    logging.warn("No player with such ID found. Something is wrong...")
+                    print(players_with_id)
+                    return
+                player = players_with_id[0]
+                player.role = message.role_change.sender_role
+
             case "state":
+                self.updatePingData(message.sender_id, got=True)
                 if message.state.state.state_order > self.state_order:
                     self.field.food = [(c.x, c.y) for c in message.state.state.foods]
-
+                    print("===")
                     for player in message.state.state.players.players:
                         for old_player in self.players:
                             if player.id == old_player.id:
@@ -313,6 +443,7 @@ class GameWidget(QWidget, Subscriber):
                                 break
                         else:
                             self.players.append(player)
+                        print(player.id, player.name, player.role)
 
                     alive_ids = set()
                     for snake in message.state.state.snakes:
@@ -332,16 +463,10 @@ class GameWidget(QWidget, Subscriber):
                     self.field.snakes = list(filter(lambda x: x.player.id in alive_ids, self.field.snakes))
                     self.update()
 
-        address = datagram.senderAddress().toString().replace("::ffff:", "")
-        if address not in self.pingData.keys():
-            self.pingData[address] = {
-                "last_sent": 0,
-                "last_got": 0
-            }
-        self.pingData[address]["last_got"] = time.time_ns()
-
     def becomeMaster(self):
         try:
+            self.player.role = snakes.NodeRole.MASTER
+            self.field.timer.start(self.server.settings.state_delay_ms)
             self.announcementTimer = QTimer()
             self.announcementTimer.setSingleShot(False)
             self.announcementTimer.timeout.connect(self.sendAnnouncementMsg)
@@ -446,7 +571,7 @@ class GameWidget(QWidget, Subscriber):
 
 
 class FieldWidget:
-    def __init__(self, canvas: QWidget, parent: QWidget, settings: snakes.GameConfig, client_id: int, is_host: bool):
+    def __init__(self, canvas: QWidget, parent: QWidget, settings: snakes.GameConfig, client_id: int):
         self.canvas = canvas
         self.parent = parent
         self.settings = settings
@@ -461,8 +586,6 @@ class FieldWidget:
         self.timer.setSingleShot(False)
 
         self.client_id = client_id
-        if is_host:
-            self.timer.start(self.settings.state_delay_ms)
 
     def addSnake(self, x: int, y: int, player: snakes.GamePlayer):
         snake = Snake(player, x=x, y=y, direction=random.choice(
