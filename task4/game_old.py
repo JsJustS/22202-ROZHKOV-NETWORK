@@ -127,7 +127,6 @@ class GameWidget(QWidget, Subscriber):
         self.keyPressed.connect(self.onKey)
 
         self.show()
-        self.sizeLabel.setText(f"SIZE: {self.server.settings.width}x{self.server.settings.height}")
 
     def updatePingData(self, key, sent=False, got=False):
         try:

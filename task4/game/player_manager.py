@@ -5,15 +5,24 @@ from typing import Set, Union
 
 
 class Player:
-    def __init__(self, name: str, id: int, ip_address: str, port: int, role: snakes.NodeRole, score: int):
-        self.name = ""
-        self.id = 0
-        self.ip_address = ""
-        self.port = 1111
-        self.role = snakes.NodeRole.NORMAL
-        self.score = 0
+    def __init__(
+            self,
+            name: str,
+            id: int,
+            ip_address: str,
+            port: int,
+            role: snakes.NodeRole = snakes.NodeRole.NORMAL,
+            score: int = 0,
+            is_client: bool = False
+    ):
+        self.name = name
+        self.id = id
+        self.ip_address = ip_address
+        self.port = port
+        self.role = role
+        self.score = score
 
-        self.is_client = True
+        self.is_client = is_client
         self.last_socket_message_got = 0
         self.last_socket_message_sent = 0
 
