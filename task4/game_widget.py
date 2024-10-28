@@ -7,7 +7,7 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QPainter, QColor
 from PyQt6.QtWidgets import QWidget, QListWidgetItem
 
-from network import NetworkHandler
+from network import NetworkHandler, Subscriber
 from game.engine import GameEngine, Snake
 import task4.snakes.snakes_pb2 as snakes
 from typing import Set, Tuple
@@ -30,7 +30,6 @@ class GameWidget(QWidget):
             port: int,
             server_name: str,
             game_config: snakes.GameConfig,
-            client_id: int = 0,
             is_host: bool = False,
     ):
         super().__init__()
@@ -46,15 +45,15 @@ class GameWidget(QWidget):
             client_requested_role = snakes.NodeRole.NORMAL
 
         self.engine = GameEngine(
-            server_name=server_name,
+            game_name=server_name,
             field_width=game_config.width,
             field_height=game_config.height,
             food_static=game_config.food_static,
             state_delay_ms=game_config.state_delay_ms,
             network_handler=network_handler,
-            client_id=client_id,
             client_name=client_name,
-            client_requested_role=client_requested_role
+            client_requested_role=client_requested_role,
+            update_callback=self._update_callback
         )
         self.field_widget = FieldWidget(
             canvas=self.artWidget,
@@ -93,6 +92,9 @@ class GameWidget(QWidget):
         self.client_widget.avaliableGamesTable.setEnabled(True)
         self.client_widget.show()
 
+    def _update_callback(self):
+        self.update()
+
     def paintEvent(self, event) -> None:
         try:
             self.drawField()
@@ -103,9 +105,9 @@ class GameWidget(QWidget):
 
     def drawField(self) -> None:
         self.field_widget.startDrawing()
-        self.field_widget.drawFood(self.engine.getFood())
+        self.field_widget.drawFood(self.engine.field_manager.getFood())
         self.field_widget.drawSnakes(
-            self.engine.getSnakes(),
+            self.engine.field_manager.getSnakes(),
             client_player_id=self.engine.player_manager.client_player.id
         )
         self.field_widget.stopDrawing()
@@ -117,17 +119,17 @@ class GameWidget(QWidget):
         else:
             self.masterLabel.setText(f"MASTER: <NOT FOUND>")
 
-        self.foodLabel.setText(f"FOOD: {self.engine.food_static} + {len(self.engine.player_manager.getPlayers())}")
+        self.foodLabel.setText(f"FOOD: {self.engine.field_manager.food_static} + {len(self.engine.player_manager.getPlayers())}")
 
-        self.sizeLabel.setText(f"SIZE: {self.engine.field_width}x{self.engine.field_height}")
+        self.sizeLabel.setText(f"SIZE: {self.engine.field_manager.width}x{self.engine.field_manager.height}")
 
     def updateRatingData(self):
         self.ratingList.clear()
         sorted_active_players = sorted(
             self.engine.player_manager.getPlayers(
-                lambda x: x.role != snakes.NodeRole.VIEWER
+                lambda x: x.role != snakes.VIEWER
             ),
-            key=lambda x: x.player.score,
+            key=lambda x: x.score,
             reverse=True
         )
         for player in sorted_active_players:

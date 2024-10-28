@@ -1,7 +1,9 @@
 import logging
 
+from google.protobuf.internal.containers import RepeatedCompositeFieldContainer
+
 import task4.snakes.snakes_pb2 as snakes
-from typing import Set, Union
+from typing import Set, Union, List
 
 
 class Player:
@@ -11,7 +13,8 @@ class Player:
             id: int,
             ip_address: str,
             port: int,
-            role: snakes.NodeRole = snakes.NodeRole.NORMAL,
+            role: snakes.NodeRole = snakes.NORMAL,
+            type: snakes.PlayerType = snakes.HUMAN,
             score: int = 0,
             is_client: bool = False
     ):
@@ -21,6 +24,7 @@ class Player:
         self.port = port
         self.role = role
         self.score = score
+        self.type = type
 
         self.is_client = is_client
         self.last_socket_message_got = 0
@@ -52,7 +56,7 @@ class PlayerManager:
         if len(players_with_id) == 0:
             return None
         if len(players_with_id) > 1:
-            logging.warn(f"More than 1 player have id {id}")
+            logging.warning(f"More than 1 player have id {id}")
         return players_with_id.pop()
 
     def getPlayersWithRole(self, role: snakes.NodeRole) -> Set[Player]:
@@ -60,19 +64,19 @@ class PlayerManager:
         return players_with_role
 
     def getMaster(self) -> Union[Player, None]:
-        masters = self.getPlayersWithRole(snakes.NodeRole.MASTER)
+        masters = self.getPlayersWithRole(snakes.MASTER)
         if len(masters) == 0:
             return None
         if len(masters) > 1:
-            logging.warn("More than 1 player with MASTER role were found.")
+            logging.warning("More than 1 player with MASTER role were found.")
         return masters.pop()
 
     def getDeputy(self) -> Union[Player, None]:
-        deputies = self.getPlayersWithRole(snakes.NodeRole.DEPUTY)
+        deputies = self.getPlayersWithRole(snakes.DEPUTY)
         if len(deputies) == 0:
             return None
         if len(deputies) > 1:
-            logging.warn("More than 1 player with DEPUTY role were found.")
+            logging.warning("More than 1 player with DEPUTY role were found.")
         return deputies.pop()
 
     def addPlayer(self, player: Player) -> None:
@@ -81,5 +85,44 @@ class PlayerManager:
     def removePlayerByID(self, id: int) -> None:
         players_with_id = set(filter(lambda x: x.id == id, self._players))
         if len(players_with_id) > 1:
-            logging.warn(f"More than 1 player have id {id}")
+            logging.warning(f"More than 1 player have id {id}")
         self._players.difference_update(players_with_id)
+
+    def asMsg(self) -> List[snakes.GamePlayer]:
+        game_players = list()
+        for player in self._players:
+            game_player = snakes.GamePlayer(
+                name=player.name,
+                id=player.id,
+                ip_address=player.ip_address,
+                port=player.port,
+                role=player.role,
+                type=player.type,
+                score=player.score
+            )
+            game_players.append(game_player)
+        return game_players
+
+    def playersFromMsg(self, players: RepeatedCompositeFieldContainer[snakes.GamePlayer]):
+        for player in players:
+            for old_player in self._players:
+                if player.id == old_player.id:
+                    old_player.name = player.name
+                    old_player.ip_address = player.ip_address
+                    old_player.port = player.port
+                    old_player.role = player.role
+                    old_player.type = player.type
+                    old_player.score = player.score
+                    break
+            else:
+                self._players.add(
+                    Player(
+                        name=player.name,
+                        id=player.id,
+                        ip_address=player.ip_address,
+                        port=player.port,
+                        role=player.role,
+                        type=player.type,
+                        score=player.score
+                    )
+                )

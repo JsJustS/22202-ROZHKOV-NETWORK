@@ -14,7 +14,7 @@ import random
 
 from settings import ServerSettingsWindow
 from network import NetworkHandler, Subscriber
-from game_old import GameWidget, GameServer
+from game_widget import GameWidget
 
 
 class ClientWindow(QWidget, Subscriber):
@@ -66,7 +66,6 @@ class ClientWindow(QWidget, Subscriber):
         self.joinServer(data["host"], data["port"], data["game"], self.modeButton.text() == "MODE: NORMAL")
 
     def adjustTableSize(self):
-        # todo: update player count
         width = self.avaliableGamesTable.width()
         self.avaliableGamesTable.setColumnWidth(0, int(width / 100 * 40) - 1)
         self.avaliableGamesTable.setColumnWidth(1, int(width / 100 * 20) - 1)
@@ -139,22 +138,19 @@ class ClientWindow(QWidget, Subscriber):
             if self.trying_to_join is None:
                 return
             game = self.games[self.trying_to_join]["game"]
-            print("my_id", my_id)
             self.gameWidget = GameWidget(
                 self,
-                GameServer(
-                    self.games[self.trying_to_join]["host"],
-                    self.games[self.trying_to_join]["port"],
-                    game.game_name,
-                    snakes.GameConfig(
-                        width=game.config.width,
-                        height=game.config.height,
-                        food_static=game.config.food_static,
-                        state_delay_ms=game.config.state_delay_ms
-                    )
-                ),
                 self.networkHandler,
-                my_id
+                self.games[self.trying_to_join]["host"],
+                self.games[self.trying_to_join]["port"],
+                game.game_name,
+                snakes.GameConfig(
+                    width=game.config.width,
+                    height=game.config.height,
+                    food_static=game.config.food_static,
+                    state_delay_ms=game.config.state_delay_ms
+                ),
+                is_host=False
             )
 
             self.hide()
