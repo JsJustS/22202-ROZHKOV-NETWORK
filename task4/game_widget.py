@@ -46,8 +46,6 @@ class GameWidget(QWidget):
             client_requested_role = snakes.NodeRole.NORMAL
 
         self.engine = GameEngine(
-            initial_host=host,
-            initial_port=port,
             server_name=server_name,
             field_width=game_config.width,
             field_height=game_config.height,
@@ -71,7 +69,7 @@ class GameWidget(QWidget):
         self.setWindowTitle(f"Snakes | {server_name} | {client_name}")
         self.show()
 
-        self.engine.start(is_host)
+        self.engine.start(is_host, host, port)
 
     def keyPressEvent(self, event: QKeyEvent):
         super().keyPressEvent(event)
@@ -163,9 +161,6 @@ class FieldWidget:
         top_y = ceil((self.canvas.height() - block_dimension * self.height) / 2)
         return left_x + self.canvas.x(), top_y + self.canvas.y()
 
-    def torPos(self, x, y):
-        return x % self.width, y % self.height
-
     def startDrawing(self):
         if self._painter is not None:
             return
@@ -199,7 +194,7 @@ class FieldWidget:
         a, b = self.getPos()
         base = self.getBlockDimension()
         for snake in snakes_set:
-            x, y = self.torPos(snake.head_x, snake.head_y)
+            x, y = snake.head_x % self.width, snake.head_y % self.height
             self._painter.fillRect(
                 a + x * base,
                 b + y * base,

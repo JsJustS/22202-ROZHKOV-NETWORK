@@ -63,6 +63,9 @@ class NetworkHandler:
     def subscribe(self, subscriber: Subscriber):
         self._subscribers.append(subscriber)
 
+    def unsubscribe(self, subscriber: Subscriber):
+        self._subscribers.remove(subscriber)
+
     def notifySubscribers(self, datagram: QNetworkDatagram):
         for subscriber in self._subscribers:
             subscriber.notify(datagram)
