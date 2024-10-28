@@ -42,7 +42,7 @@ class GameWidget(QWidget):
             client_name = ''.join(random.choices(ascii_letters))
 
         client_requested_role = snakes.NodeRole.VIEWER
-        if self.modeButton.text() == "MODE: NORMAL":
+        if self.client_widget.modeButton.text() == "MODE: NORMAL":
             client_requested_role = snakes.NodeRole.NORMAL
 
         self.engine = GameEngine(
@@ -61,12 +61,12 @@ class GameWidget(QWidget):
         self.field_widget = FieldWidget(
             canvas=self.artWidget,
             parent=self,
-            width=0,
-            height=0
+            width=game_config.width,
+            height=game_config.height
         )
 
         self.key_pressed.connect(self.onKey)
-        self.leaveButton.connect(self.engine.becomeViewer)
+        self.leaveButton.clicked.connect(self.engine.becomeViewer)
 
         self.setWindowTitle(f"Snakes | {server_name} | {client_name}")
         self.show()
@@ -89,6 +89,7 @@ class GameWidget(QWidget):
         self.engine.stop()
 
         # return to client widget
+        self.client_widget.gameWidget = None
         self.client_widget.playerNameLine.setEnabled(True)
         self.client_widget.hostButton.setEnabled(True)
         self.client_widget.avaliableGamesTable.setEnabled(True)
@@ -118,7 +119,7 @@ class GameWidget(QWidget):
         else:
             self.masterLabel.setText(f"MASTER: <NOT FOUND>")
 
-        self.foodLabel.setText(f"FOOD: {self.engine.food_static} + {self.engine.player_manager.getPlayers()}")
+        self.foodLabel.setText(f"FOOD: {self.engine.food_static} + {len(self.engine.player_manager.getPlayers())}")
 
         self.sizeLabel.setText(f"SIZE: {self.engine.field_width}x{self.engine.field_height}")
 

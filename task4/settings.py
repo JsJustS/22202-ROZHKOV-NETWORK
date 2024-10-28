@@ -4,7 +4,7 @@ from qtpy import uic
 import os
 import json
 import logging
-import game_old
+from game_widget import GameWidget
 import snakes.snakes_pb2 as snakes
 
 
@@ -76,28 +76,28 @@ class ServerSettingsWindow(QWidget):
 
     def startGame(self):
         try:
-            self.client.gameWidget = game.GameWidget(
-                self.client,
-                game.GameServer(
-                    self.client.networkHandler.host,
-                    self.client.networkHandler.port,
-                    self.serverNameLine.text(),
-                    snakes.GameConfig(
+            self.client.gameWidget = GameWidget(
+                client_widget=self.client,
+                network_handler=self.client.networkHandler,
+                host=self.client.networkHandler.host,
+                port=self.client.networkHandler.port,
+                server_name=self.serverNameLine.text(),
+                game_config=snakes.GameConfig(
                         width=self.widthBox.value(),
                         height=self.heightBox.value(),
                         food_static=self.foodBox.value(),
                         state_delay_ms=self.delayBox.value()
-                    )
                 ),
-                self.client.networkHandler
+                is_host=True
             )
 
-            self.hide()
             self.client.hide()
+            self.close()
         except Exception as e:
             print("startGame_settings", e)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
-        self.client.playerNameLine.setEnabled(True)
-        self.client.hostButton.setEnabled(True)
-        self.client.avaliableGamesTable.setEnabled(True)
+        if self.client.gameWidget is None:
+            self.client.playerNameLine.setEnabled(True)
+            self.client.hostButton.setEnabled(True)
+            self.client.avaliableGamesTable.setEnabled(True)
