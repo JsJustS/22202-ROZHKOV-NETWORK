@@ -60,10 +60,13 @@ class ClientWindow(QWidget, Subscriber):
         self.networkHandler.unicast(message, host, port)
 
     def onServerDoubleClick(self, row, col):
-        name = self.avaliableGamesTable.item(row, 0).text()
-        data = self.games[name]
-        self.trying_to_join = name
-        self.joinServer(data["host"], data["port"], data["game"], self.modeButton.text() == "MODE: NORMAL")
+        try:
+            name = self.avaliableGamesTable.item(row, 0).text()
+            data = self.games[name]
+            self.trying_to_join = name
+            self.startGame()
+        except Exception as e:
+            print(e)
 
     def adjustTableSize(self):
         width = self.avaliableGamesTable.width()
@@ -123,17 +126,10 @@ class ClientWindow(QWidget, Subscriber):
                             "game": game,
                             "last_update": time.time_ns()
                         }
-                case "ack":
-                    if self.gameWidget is not None:
-                        return
-                    my_id = message.receiver_id
-                    self.startGame(my_id)
-                case "error":
-                    logging.error(message.error.error_message)
         except Exception as e:
             print("notify", e)
 
-    def startGame(self, my_id: int):
+    def startGame(self):
         try:
             if self.trying_to_join is None:
                 return

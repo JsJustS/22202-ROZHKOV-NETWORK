@@ -92,15 +92,17 @@ class GameEngine(Subscriber):
             self.field_manager.spawnSnake(x, y, self.player_manager.client_player.id)
 
         # Step 2. Запустить все нужные для КЛИЕНТА службы
-        # joinMessage = snakes.GameMessage(
-        #     join=snakes.GameMessage.JoinMsg(
-        #         player_type=snakes.HUMAN,
-        #         player_name=self.player_manager.client_player.name,
-        #         game_name=self.game_name,
-        #         requested_role=self.player_manager.client_player.role
-        #     )
-        # )
-        # self._sendMessage(message=joinMessage, host=master_host, port=master_port, expect_ack=True)
+        else:
+            joinMessage = snakes.GameMessage(
+                msg_seq=self._msg_seq(),
+                join=snakes.GameMessage.JoinMsg(
+                    player_type=snakes.HUMAN,
+                    player_name=self.player_manager.client_player.name,
+                    game_name=self.game_name,
+                    requested_role=self.player_manager.client_player.role
+                )
+            )
+            self._sendMessage(message=joinMessage, host=master_host, port=master_port, expect_ack=True)
 
         self._ack_timer.start()
         self._ping_timer.start()
@@ -109,6 +111,8 @@ class GameEngine(Subscriber):
         # Остановка всех служб
         for timer in self._timers:
             timer.stop()
+
+        self.network_handler.unsubscribe(self)
 
     def moveClientSnake(self, direction: snakes.Direction) -> None:
         if self.player_manager.client_player.role == snakes.VIEWER:
@@ -293,6 +297,9 @@ class GameEngine(Subscriber):
         self._tick_timer.start()
         self._announce_timer.start()
 
+    def becomeViewer(self):
+        self.player_manager.client_player.role = snakes.VIEWER
+
     def _sendGameState(self):
         gameStateMessage = snakes.GameMessage(
             state=snakes.GameMessage.StateMsg(
@@ -429,7 +436,7 @@ class GameEngine(Subscriber):
                                     f"but he does not exist")
             elif (message.role_change.sender_role == snakes.MASTER and
                   message.role_change.receiver_role == snakes.VIEWER):
-                self.player_manager.client_player.role = snakes.VIEWER
+                self.becomeViewer()
         else:
             logging.warning("Unsupported role_change request:")
             logging.warning(message)
