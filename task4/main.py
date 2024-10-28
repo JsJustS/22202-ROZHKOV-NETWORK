@@ -14,7 +14,7 @@ import random
 
 from settings import ServerSettingsWindow
 from network import NetworkHandler, Subscriber
-from game import GameWidget, GameServer
+from game_old import GameWidget, GameServer
 
 
 class ClientWindow(QWidget, Subscriber):

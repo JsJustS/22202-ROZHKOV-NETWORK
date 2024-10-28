@@ -4,7 +4,7 @@ from qtpy import uic
 import os
 import json
 import logging
-import game
+import game_old
 import snakes.snakes_pb2 as snakes
 
 

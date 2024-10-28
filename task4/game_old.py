@@ -224,6 +224,8 @@ class GameWidget(QWidget, Subscriber):
                     # Situation B. NEW MASTER
                     elif self.player.role == snakes.NodeRole.DEPUTY and player.role == snakes.NodeRole.MASTER:
                         self.becomeMaster()
+                        self.server.host = self.player.ip_address
+                        self.server.port = self.player.port
 
                         normals = list(filter(lambda x: x.role == snakes.NodeRole.NORMAL, self.players))
                         if len(normals) < 1:
@@ -417,7 +419,7 @@ class GameWidget(QWidget, Subscriber):
                     self.messagesWithoutAck.pop(message.msg_seq)
 
             case "role_change":
-                print(f"got role change from {message.role_change.sender_role} and i am now {message.role_change.receiver_role}")
+                print(f"got role change from id {message.sender_id} and i am now {message.role_change.receiver_role}")
                 self.player.role = message.role_change.receiver_role
                 players_with_id = list(filter(lambda x: x.id == message.sender_id, self.players))
                 if len(players_with_id) != 1:
@@ -426,6 +428,7 @@ class GameWidget(QWidget, Subscriber):
                     return
                 player = players_with_id[0]
                 player.role = message.role_change.sender_role
+                self.updatePingData(message.sender_id, got=True)
 
             case "state":
                 self.updatePingData(message.sender_id, got=True)
@@ -579,7 +582,6 @@ class FieldWidget:
 
         self.snakes = []
         self.food = set()
-        self.state_id = 0
 
         # change if not server
         self.timer = QTimer()
