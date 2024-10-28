@@ -47,7 +47,7 @@ class PlayerManager:
     def getPlayers(self, fn=lambda x: True) -> Set[Player]:
         return set(filter(fn, self._players))
 
-    def getPlayerByID(self) -> Union[Player, None]:
+    def getPlayerByID(self, id: int) -> Union[Player, None]:
         players_with_id = self.getPlayers(lambda x: x.id == id)
         if len(players_with_id) == 0:
             return None
