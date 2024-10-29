@@ -103,8 +103,10 @@ class ClientWindow(QWidget, Subscriber):
                 self.avaliableGamesTable.setItem(row, 2, QTableWidgetItem(size))
                 self.avaliableGamesTable.setItem(row, 3, QTableWidgetItem(food))
             for i in to_be_deleted:
-                self.games.pop(i)
-                self.avaliableGamesTable.removeRow(name_to_row[i])
+                if i in self.games.keys():
+                    self.games.pop(i)
+                if i in name_to_row.keys():
+                    self.avaliableGamesTable.removeRow(name_to_row[i])
         except Exception as e:
             print("adjustTableSize", e, type(e))
 

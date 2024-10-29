@@ -240,7 +240,7 @@ class GameEngine(Subscriber):
                     pingMessage = snakes.GameMessage(ping=snakes.GameMessage.PingMsg())
                     self._sendMessage2Player(message=pingMessage, player=player)
 
-                if current_time - player.last_socket_message_got > self.state_delay_ms * 10.0 * 1e6:
+                if current_time - player.last_socket_message_got > self.state_delay_ms * 0.8 * 1e6:
                     logging.warning(f"{player.name}#{player.id} does not respond. Kicked from formation.")
                     to_be_deleted.add(player)
 
@@ -417,7 +417,12 @@ class GameEngine(Subscriber):
             case "ping":
                 pass  # do nothing, code at the end of the method does everything needed
             case "error":
-                logging.error(message)
+                logging.error(message.error.error_message)
+                self._acknowledge(
+                    message,
+                    datagram.senderAddress().toString().replace("::ffff:", ""),
+                    datagram.senderPort()
+                )
             case "role_change":
                 try:
                     self._on_notify_role_change(message, datagram)
