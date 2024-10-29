@@ -164,6 +164,10 @@ class GameEngine(Subscriber):
             logging.warning("tried to send message to MASTER, but no MASTER was found!")
             logging.warning("message dropped:")
             logging.warning(message)
+
+            if self.player_manager.client_player.role == snakes.DEPUTY:
+                self._becomeMaster()
+                self._sendMessage2Master(message, expect_ack, calibrate)
             return
         self._sendMessage2Player(message=message, player=master, expect_ack=expect_ack, calibrate=calibrate)
 
@@ -318,7 +322,26 @@ class GameEngine(Subscriber):
         self._announce_timer.start()
 
     def becomeViewer(self):
-        self.player_manager.client_player.role = snakes.VIEWER
+
+        roleChangeMessage = snakes.GameMessage(
+            role_change=snakes.GameMessage.RoleChangeMsg(
+                sender_role=snakes.VIEWER,
+                receiver_role=snakes.MASTER
+            )
+        )
+        self._sendMessage2Master(roleChangeMessage, expect_ack=True)
+        if self.player_manager.client_player.role == snakes.MASTER:
+            self._tick_timer.stop()
+            self._announce_timer.stop()
+            deputy = self.player_manager.getDeputy()
+            if deputy is not None:
+                roleChangeMessage = snakes.GameMessage(
+                    role_change=snakes.GameMessage.RoleChangeMsg(
+                        sender_role=snakes.MASTER,
+                        receiver_role=snakes.MASTER
+                    )
+                )
+                self._sendMessage2Player(roleChangeMessage, player=deputy, expect_ack=True)
 
     def _sendGameState(self, player: Player = None):
         gameStateMessage = snakes.GameMessage(
@@ -344,6 +367,7 @@ class GameEngine(Subscriber):
         # Step 1. Tick Field
         player_updates = self.field_manager.tick()
 
+        master_died = False
         # Step 2. Apply player changes that are out of scope of the field
         for player_id, update_id in player_updates:
             player = self.player_manager.getPlayerByID(player_id)
@@ -354,17 +378,22 @@ class GameEngine(Subscriber):
                 case FieldManager.UPDATE_SCORE:
                     player.score += 1
                 case FieldManager.UPDATE_DEATH:
+                    if player == self.player_manager.client_player:
+                        master_died = True
+                        continue
                     player.role = snakes.VIEWER
                     roleChangeMessage = snakes.GameMessage(
                         role_change=snakes.GameMessage.RoleChangeMsg(
-                            sender_role=self.player_manager.client_player.role,
+                            sender_role=snakes.MASTER,
                             receiver_role=snakes.VIEWER
                         )
                     )
-                    self._sendMessage2Player(message=roleChangeMessage, player=player)
+                    self._sendMessage2Player(message=roleChangeMessage, player=player, expect_ack=True)
 
         # Step 3. Send states
         self._sendGameState()
+        if master_died:
+            self.becomeViewer()
 
     def notify(self, datagram: QNetworkDatagram):
         current_time = time.time_ns()
@@ -381,7 +410,6 @@ class GameEngine(Subscriber):
             # client and server
             case "ack":
                 try:
-                    print(message)
                     self._on_notify_ack(message)
                 except Exception as e:
                     print("ack", e)
@@ -421,7 +449,8 @@ class GameEngine(Subscriber):
         try:
             player = self.player_manager.getPlayerByID(message.sender_id)
             if player is None:
-                logging.warning(f"Got {message.WhichOneof('Type')} message from unknown player with id {message.sender_id}")
+                logging.warning(
+                    f"Got {message.WhichOneof('Type')} message from unknown player with id {message.sender_id}")
                 return
             player.last_socket_message_got = time.time_ns()
         except Exception as e:
@@ -434,12 +463,19 @@ class GameEngine(Subscriber):
                 self.field_manager.foodFromMsg(message.state.state.foods)
                 self.field_manager.snakesFromMsg(message.state.state.snakes)
                 self.player_manager.playersFromMsg(message.state.state.players.players)
+                self.__player_id = self.player_manager.getMaxPlayerID() + 1
 
             self._update_callback()
 
     def _on_notify_ack(self, message: snakes.GameMessage):
         if message.msg_seq in self._messages_expecting_ack.keys():
             self._messages_expecting_ack.pop(message.msg_seq)
+            match message.WhichOneof("Type"):
+                case "role_change":
+                    self.player_manager.client_player.role = message.role_change.sender_role
+                    player = self.player_manager.getPlayerByID(message.receiver_id)
+                    if player is not None:
+                        player.role = message.role_change.receiver_role
         # first ACK message from MASTER contains player's ID
         if self.player_manager.client_player.id == -1:
             logging.info(f"Ack from MASTER, obtained player_id {message.receiver_id}")
@@ -455,7 +491,24 @@ class GameEngine(Subscriber):
             self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
 
     def _on_notify_role_change(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
-        if self.player_manager.client_player.role == snakes.MASTER == message.role_change.receiver_role:
+        if message.role_change.sender_role == snakes.MASTER and message.role_change.receiver_role == snakes.VIEWER:
+            self.player_manager.client_player.role = snakes.VIEWER
+            self._acknowledge(
+                message,
+                datagram.senderAddress().toString().replace("::ffff:", ""),
+                datagram.senderPort()
+            )
+        elif message.role_change.sender_role == snakes.MASTER and message.role_change.receiver_role == snakes.MASTER:
+            if self.player_manager.client_player.role == snakes.DEPUTY:
+                self._acknowledge(
+                    message,
+                    datagram.senderAddress().toString().replace("::ffff:", ""),
+                    datagram.senderPort()
+                )
+                master = self.player_manager.getMaster()
+                master.role = snakes.VIEWER
+                self._becomeMaster()
+        elif self.player_manager.client_player.role == snakes.MASTER == message.role_change.receiver_role:
             if message.role_change.sender_role == snakes.VIEWER:
                 player = self.player_manager.getPlayerByID(message.sender_id)
                 if player is not None:
@@ -465,6 +518,7 @@ class GameEngine(Subscriber):
                     )
                     for snake in snakes_with_id:
                         snake.state = snakes.GameState.Snake.SnakeState.ZOMBIE
+                    self._acknowledge(message, player.ip_address, player.port)
                 else:
                     logging.warning(f"Player with id {message.sender_id} requested changing role "
                                     f"but he does not exist")
@@ -472,22 +526,21 @@ class GameEngine(Subscriber):
             if (message.role_change.sender_role == snakes.MASTER and
                     message.role_change.receiver_role == snakes.DEPUTY):
                 self.player_manager.client_player.role = snakes.DEPUTY
+                master = self.player_manager.getMaster()
+                self._acknowledge(message, master.ip_address, master.port)
             elif (message.role_change.sender_role == snakes.MASTER and
                   message.role_change.receiver_role == snakes.NORMAL):
                 player = self.player_manager.getPlayerByID(message.sender_id)
                 if player is not None:
                     player.role = message.role_change.sender_role
+                    self._acknowledge(message, player.ip_address, player.port)
                 else:
                     logging.warning(f"Player with id {message.sender_id} requested changing role "
                                     f"but he does not exist")
-            elif (message.role_change.sender_role == snakes.MASTER and
-                  message.role_change.receiver_role == snakes.VIEWER):
-                self.becomeViewer()
         else:
             logging.warning("Unsupported role_change request:")
             logging.warning(message)
             return
-        print(datagram.senderAddress().toString().replace("::ffff:", ""))
         self._acknowledge(message, datagram.senderAddress().toString().replace("::ffff:", ""), datagram.senderPort())
 
     def _on_notify_join(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
