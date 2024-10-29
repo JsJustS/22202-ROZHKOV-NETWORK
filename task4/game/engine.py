@@ -107,11 +107,10 @@ class GameEngine(Subscriber):
                 )
                 self._sendMessage(message=joinMessage, host=master_host, port=master_port, expect_ack=True)
                 master = self.player_manager.getMaster()
-                print(self.player_manager.asMsg())
                 if master is not None:
                     master.ip_address = master_host
                     master.port = master_port
-                    print(f"Found master {master.name}#{master.id}, set {master_host}:{master_port}")
+                    # print(f"Found master {master.name}#{master.id}, set {master_host}:{master_port}")
 
             self._ack_timer.start()
             self._ping_timer.start()
@@ -322,6 +321,8 @@ class GameEngine(Subscriber):
         self._announce_timer.start()
 
     def becomeViewer(self):
+        if self.player_manager.client_player.role == snakes.VIEWER:
+            return
 
         roleChangeMessage = snakes.GameMessage(
             role_change=snakes.GameMessage.RoleChangeMsg(
@@ -556,8 +557,9 @@ class GameEngine(Subscriber):
             )
             self.player_manager.addPlayer(player)
             message.sender_id, message.receiver_id = player_id, self.player_manager.client_player.id
-            self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
+            self._acknowledge(message=message, host=ip_address, port=datagram.senderPort())
             self._sendGameState(player)
+            logging.info(f"{player.name}#{player.id} ({player.ip_address}:{player.port}) has joined as VIEWER.")
             return
 
         pos = self.field_manager.getPosForNewSnake()
@@ -568,7 +570,7 @@ class GameEngine(Subscriber):
                     error_message="Could not find space on field."
                 )
             )
-            self._sendMessage(message=errorMessage, host=datagram.senderAddress(), port=datagram.senderPort())
+            self._sendMessage(message=errorMessage, host=ip_address, port=datagram.senderPort())
             return
 
         player_id = self._player_id()
@@ -585,7 +587,7 @@ class GameEngine(Subscriber):
         self.field_manager.spawnSnake(x=snake_x, y=snake_y, player_id=player_id)
 
         message.sender_id, message.receiver_id = player_id, self.player_manager.client_player.id
-        self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
+        self._acknowledge(message=message, host=ip_address, port=datagram.senderPort())
         self._sendGameState(player)
 
         if self.player_manager.getDeputy() is None:
