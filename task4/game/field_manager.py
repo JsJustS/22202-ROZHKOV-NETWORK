@@ -33,12 +33,12 @@ class Snake:
             case snakes.Direction.RIGHT:
                 self.tail.append((self.head_x - 1, self.head_y))
 
-    def toPoints(self) -> List[Tuple[int, int]]:
+    def toPoints(self, width: int, height: int) -> List[Tuple[int, int]]:
         points = list()
-        old_x, old_y = self.head_x, self.head_y
+        old_x, old_y = self.head_x % width, self.head_y % height
         points.append((old_x, old_y))
         for x, y in self.tail:
-            dx, dy = x - old_x, y - old_y
+            dx, dy = (x % width) - old_x, (y % height) - old_y
             points.append((dx, dy))
             old_x, old_y = x, y
         return points
@@ -54,7 +54,7 @@ class Snake:
             old_x, old_y = head
         self.head_x, self.head_y = old_x, old_y
         self.tail.clear()
-        for point in points:
+        for point in points[1:]:
             point: Union[Tuple[int, int], snakes.GameState.Coord] = point
             if type(point) is snakes.GameState.Coord:
                 dx, dy = point.x, point.y
@@ -63,13 +63,14 @@ class Snake:
             old_x, old_y = (old_x + dx, old_y + dy)
             self.tail.append((old_x, old_y))
 
-    def asMsg(self):
+    def asMsg(self, width: int, height: int):
+        points = list(map(
+                lambda point: snakes.GameState.Coord(x=point[0], y=point[1]),
+                self.toPoints(width, height)
+        ))
         return snakes.GameState.Snake(
             player_id=self.player_id,
-            points=map(
-                lambda point: snakes.GameState.Coord(x=point[0], y=point[1]),
-                self.toPoints()
-            ),
+            points=points,
             head_direction=self.direction,
             state=self.state
         )

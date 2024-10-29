@@ -300,7 +300,7 @@ class GameEngine(Subscriber):
     def becomeViewer(self):
         self.player_manager.client_player.role = snakes.VIEWER
 
-    def _sendGameState(self):
+    def _sendGameState(self, player: Player = None):
         gameStateMessage = snakes.GameMessage(
             state=snakes.GameMessage.StateMsg(
                 state=snakes.GameState(
@@ -309,10 +309,14 @@ class GameEngine(Subscriber):
                         players=self.player_manager.asMsg()
                     ),
                     foods=[snakes.GameState.Coord(x=x, y=y) for x, y in self.field_manager.getFood()],
-                    snakes=[snake.asMsg() for snake in self.field_manager.getSnakes()]
+                    snakes=[snake.asMsg(self.field_manager.width, self.field_manager.height)
+                            for snake in self.field_manager.getSnakes()]
                 )
             )
         )
+        if player is not None:
+            self._sendMessage2Player(message=gameStateMessage, player=player, expect_ack=False)
+            return
         for player in self.player_manager.getPlayers():
             self._sendMessage2Player(message=gameStateMessage, player=player, expect_ack=False)
 
@@ -355,27 +359,42 @@ class GameEngine(Subscriber):
 
             # client and server
             case "ack":
-                self._on_notify_ack(message)
+                try:
+                    self._on_notify_ack(message)
+                except Exception as e:
+                    print("ack", e)
             case "ping":
                 pass  # do nothing, code at the end of the method does everything needed
             case "error":
                 logging.error(message)
             case "role_change":
-                self._on_notify_role_change(message)
+                try:
+                    self._on_notify_role_change(message)
+                except Exception as e:
+                    print("role_change", e)
 
             # server
             case "discover":
                 self._announce((datagram.senderAddress(), datagram.senderPort()))
 
             case "steer":
-                self._on_notify_steer(message, datagram)
+                try:
+                    self._on_notify_steer(message, datagram)
+                except Exception as e:
+                    print("steer", e)
 
             case "join":
-                self._on_notify_join(message, datagram)
+                try:
+                    self._on_notify_join(message, datagram)
+                except Exception as e:
+                    print("join", e)
 
             # client
             case "state":
-                self._on_notify_state(message)
+                try:
+                    self._on_notify_state(message)
+                except Exception as e:
+                    print("state", e)
 
         player = self.player_manager.getPlayerByID(message.sender_id)
         if player is None:
@@ -442,18 +461,20 @@ class GameEngine(Subscriber):
             logging.warning(message)
 
     def _on_notify_join(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
+        ip_address = datagram.senderAddress().toString().replace("::ffff:", "")
         if message.join.requested_role == snakes.VIEWER:
             player_id = self._player_id()
             player = Player(
                 name=message.join.player_name,
                 id=player_id,
-                ip_address=datagram.senderAddress(),
+                ip_address=ip_address,
                 port=datagram.senderPort(),
                 role=snakes.VIEWER
             )
             self.player_manager.addPlayer(player)
             message.sender_id, message.receiver_id = player_id, self.player_manager.client_player.id
             self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
+            self._sendGameState(player)
             return
 
         pos = self.field_manager.getPosForNewSnake()
@@ -471,7 +492,7 @@ class GameEngine(Subscriber):
         player = Player(
             name=message.join.player_name,
             id=player_id,
-            ip_address=datagram.senderAddress(),
+            ip_address=ip_address,
             port=datagram.senderPort(),
             role=snakes.VIEWER if message.join.requested_role == snakes.VIEWER else snakes.NORMAL
         )
@@ -482,6 +503,7 @@ class GameEngine(Subscriber):
 
         message.sender_id, message.receiver_id = player_id, self.player_manager.client_player.id
         self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
+        self._sendGameState(player)
 
         if self.player_manager.getDeputy() is None:
             self._assignNewDeputy()
