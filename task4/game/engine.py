@@ -106,11 +106,17 @@ class GameEngine(Subscriber):
                     )
                 )
                 self._sendMessage(message=joinMessage, host=master_host, port=master_port, expect_ack=True)
+                master = self.player_manager.getMaster()
+                print(self.player_manager.asMsg())
+                if master is not None:
+                    master.ip_address = master_host
+                    master.port = master_port
+                    print(f"Found master {master.name}#{master.id}, set {master_host}:{master_port}")
 
             self._ack_timer.start()
             self._ping_timer.start()
         except Exception as e:
-            print(e)
+            print("start", e)
 
     def stop(self) -> None:
         # Остановка всех служб
@@ -128,6 +134,8 @@ class GameEngine(Subscriber):
             )
         )
         self._sendMessage2Master(message, expect_ack=True)
+        master = self.player_manager.getMaster()
+        logging.info(f"Sent steer message {direction} to {master.name}#{master.id} {master.ip_address}:{master.port}")
 
     def _init_timer(self, delay_ms: int, callback, start: bool = False) -> QTimer:
         timer = QTimer()
@@ -178,7 +186,7 @@ class GameEngine(Subscriber):
             for message in self._messages_expecting_ack.values():
                 self._sendMessage2Master(message, expect_ack=True, calibrate=False)
         except Exception as e:
-            print(e)
+            print("_retrySending2Master", e)
 
     def _acknowledge(self, message: snakes.GameMessage, host: str, port: int):
         ackMessage = snakes.GameMessage(
@@ -413,7 +421,7 @@ class GameEngine(Subscriber):
         try:
             player = self.player_manager.getPlayerByID(message.sender_id)
             if player is None:
-                logging.warning(f"Got message from unknown player with id {message.sender_id}")
+                logging.warning(f"Got {message.WhichOneof('Type')} message from unknown player with id {message.sender_id}")
                 return
             player.last_socket_message_got = time.time_ns()
         except Exception as e:
@@ -436,6 +444,7 @@ class GameEngine(Subscriber):
         if self.player_manager.client_player.id == -1:
             logging.info(f"Ack from MASTER, obtained player_id {message.receiver_id}")
             self.player_manager.client_player.id = message.receiver_id
+            self.__player_id = message.receiver_id
 
     def _on_notify_steer(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
         snakes_with_id = set(filter(lambda s: s.player_id == message.sender_id, self.field_manager.getSnakes()))

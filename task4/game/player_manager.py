@@ -115,8 +115,8 @@ class PlayerManager:
             for old_player in self._players:
                 if player.id == old_player.id:
                     old_player.name = player.name
-                    old_player.ip_address = player.ip_address
-                    old_player.port = player.port
+                    # old_player.ip_address = player.ip_address
+                    # old_player.port = player.port
                     old_player.role = player.role
                     old_player.type = player.type
                     old_player.score = player.score
