@@ -119,10 +119,14 @@ class ClientWindow(QWidget, Subscriber):
                     for game in games:
                         if not game.can_join:
                             continue
-                        master = list(filter(lambda x: x.role == snakes.NodeRole.MASTER, game.players.players))[0]
+                        masters = list(filter(lambda x: x.role == snakes.NodeRole.MASTER, game.players.players))
+                        if len(masters) != 1:
+                            logging.info(f"got strange announce packet with {len(masters)} MASTERS from {game.game_name}")
+                            return
+                        master = masters[0]
                         self.games[master.name] = {
                             "host": datagram.senderAddress(),
-                            "port": master.port,
+                            "port": datagram.senderPort(),
                             "game": game,
                             "last_update": time.time_ns()
                         }
@@ -137,7 +141,7 @@ class ClientWindow(QWidget, Subscriber):
             self.gameWidget = GameWidget(
                 self,
                 self.networkHandler,
-                self.games[self.trying_to_join]["host"],
+                self.games[self.trying_to_join]["host"].toString().replace("::ffff:", ""),
                 self.games[self.trying_to_join]["port"],
                 game.game_name,
                 snakes.GameConfig(
@@ -146,6 +150,7 @@ class ClientWindow(QWidget, Subscriber):
                     food_static=game.config.food_static,
                     state_delay_ms=game.config.state_delay_ms
                 ),
+                game.players,
                 is_host=False
             )
 

@@ -30,6 +30,7 @@ class GameWidget(QWidget):
             port: int,
             server_name: str,
             game_config: snakes.GameConfig,
+            players: snakes.GamePlayers = None,
             is_host: bool = False,
     ):
         super().__init__()
@@ -53,6 +54,7 @@ class GameWidget(QWidget):
             network_handler=network_handler,
             client_name=client_name,
             client_requested_role=client_requested_role,
+            existing_players=players,
             update_callback=self._update_callback
         )
         self.field_widget = FieldWidget(
@@ -119,7 +121,8 @@ class GameWidget(QWidget):
         else:
             self.masterLabel.setText(f"MASTER: <NOT FOUND>")
 
-        self.foodLabel.setText(f"FOOD: {self.engine.field_manager.food_static} + {len(self.engine.player_manager.getPlayers())}")
+        self.foodLabel.setText(f"FOOD: {self.engine.field_manager.food_static} "
+                               f"+ {len(self.engine.player_manager.getPlayers(lambda x: x.role != snakes.VIEWER))}")
 
         self.sizeLabel.setText(f"SIZE: {self.engine.field_manager.width}x{self.engine.field_manager.height}")
 

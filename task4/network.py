@@ -12,7 +12,7 @@ class Subscriber:
 
 
 class NetworkHandler:
-    MULTICAST_GROUP = "239.192.0.4"
+    MULTICAST_GROUP = "224.0.0.1"
     MULTICAST_PORT = 9192
 
     def __init__(self):
@@ -23,7 +23,7 @@ class NetworkHandler:
         self.direct_socket.readyRead.connect(self.processP2PDatagram)
 
         self.multicast_socket = QUdpSocket()
-        self.multicast_socket.setSocketOption(QAbstractSocket.SocketOption.MulticastTtlOption, 32)
+        self.multicast_socket.setSocketOption(QAbstractSocket.SocketOption.MulticastTtlOption, 100  )
         self.multicast_socket.setSocketOption(QAbstractSocket.SocketOption.MulticastLoopbackOption, 1)
         self.multicast_socket.bind(
             QHostAddress.SpecialAddress.AnyIPv4,

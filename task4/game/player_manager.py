@@ -42,11 +42,17 @@ class Player:
 
 
 class PlayerManager:
-    def __init__(self, client_player: Player):
+    def __init__(self, client_player: Player, existing_players: snakes.GamePlayers):
         self.client_player = client_player
 
         self._players = set()
         self.addPlayer(client_player)
+
+        try:
+            if existing_players is not None:
+                self.playersFromMsg(existing_players.players)
+        except Exception as e:
+            print(e)
 
     def getPlayers(self, fn=lambda x: True) -> Set[Player]:
         return set(filter(fn, self._players))
@@ -66,6 +72,7 @@ class PlayerManager:
     def getMaster(self) -> Union[Player, None]:
         masters = self.getPlayersWithRole(snakes.MASTER)
         if len(masters) == 0:
+            logging.error(self.asMsg())
             return None
         if len(masters) > 1:
             logging.warning("More than 1 player with MASTER role were found.")

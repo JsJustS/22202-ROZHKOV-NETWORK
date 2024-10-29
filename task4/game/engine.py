@@ -32,6 +32,7 @@ class GameEngine(Subscriber):
             network_handler: NetworkHandler,
             client_name: str,
             client_requested_role: snakes.NodeRole,
+            existing_players: snakes.GamePlayers,
             update_callback
     ):
         self._update_callback = update_callback
@@ -50,7 +51,8 @@ class GameEngine(Subscriber):
                 port=network_handler.port,
                 role=client_requested_role,
                 is_client=True
-            )
+            ),
+            existing_players=existing_players
         )
 
         self.field_manager = FieldManager(
@@ -84,28 +86,31 @@ class GameEngine(Subscriber):
         )
 
     def start(self, is_host: bool, master_host: str, master_port: int) -> None:
-        # Step 1. Если is_host, то вызываем запуск СЕРВЕРНЫХ служб
-        if is_host:
-            self.player_manager.client_player.id = self._player_id()
-            self._becomeMaster()
-            x, y = self.field_manager.getPosForNewSnake()
-            self.field_manager.spawnSnake(x, y, self.player_manager.client_player.id)
+        try:
+            # Step 1. Если is_host, то вызываем запуск СЕРВЕРНЫХ служб
+            if is_host:
+                self.player_manager.client_player.id = self._player_id()
+                self._becomeMaster()
+                x, y = self.field_manager.getPosForNewSnake()
+                self.field_manager.spawnSnake(x, y, self.player_manager.client_player.id)
 
-        # Step 2. Запустить все нужные для КЛИЕНТА службы
-        else:
-            joinMessage = snakes.GameMessage(
-                msg_seq=self._msg_seq(),
-                join=snakes.GameMessage.JoinMsg(
-                    player_type=snakes.HUMAN,
-                    player_name=self.player_manager.client_player.name,
-                    game_name=self.game_name,
-                    requested_role=self.player_manager.client_player.role
+            # Step 2. Запустить все нужные для КЛИЕНТА службы
+            else:
+                joinMessage = snakes.GameMessage(
+                    msg_seq=self._msg_seq(),
+                    join=snakes.GameMessage.JoinMsg(
+                        player_type=snakes.HUMAN,
+                        player_name=self.player_manager.client_player.name,
+                        game_name=self.game_name,
+                        requested_role=self.player_manager.client_player.role
+                    )
                 )
-            )
-            self._sendMessage(message=joinMessage, host=master_host, port=master_port, expect_ack=True)
+                self._sendMessage(message=joinMessage, host=master_host, port=master_port, expect_ack=True)
 
-        self._ack_timer.start()
-        self._ping_timer.start()
+            self._ack_timer.start()
+            self._ping_timer.start()
+        except Exception as e:
+            print(e)
 
     def stop(self) -> None:
         # Остановка всех служб
@@ -122,7 +127,7 @@ class GameEngine(Subscriber):
                 direction=direction
             )
         )
-        self._sentMessage2Master(message, expect_ack=True)
+        self._sendMessage2Master(message, expect_ack=True)
 
     def _init_timer(self, delay_ms: int, callback, start: bool = False) -> QTimer:
         timer = QTimer()
@@ -144,12 +149,13 @@ class GameEngine(Subscriber):
         self.__player_id += 1
         return player_id
 
-    def _sentMessage2Master(self, message: snakes.GameMessage,
+    def _sendMessage2Master(self, message: snakes.GameMessage,
                             expect_ack: bool = False, calibrate: bool = True) -> None:
         master = self.player_manager.getMaster()
         if master is None:
             logging.warning("tried to send message to MASTER, but no MASTER was found!")
-            logging.warning("message dropped: " + str(message))
+            logging.warning("message dropped:")
+            logging.warning(message)
             return
         self._sendMessage2Player(message=message, player=master, expect_ack=expect_ack, calibrate=calibrate)
 
@@ -168,8 +174,11 @@ class GameEngine(Subscriber):
         self.network_handler.unicast(message=message, host=host, port=port)
 
     def _retrySending2Master(self):
-        for message in self._messages_expecting_ack:
-            self._sentMessage2Master(message, expect_ack=True, calibrate=False)
+        try:
+            for message in self._messages_expecting_ack:
+                self._sendMessage2Master(message, expect_ack=True, calibrate=False)
+        except Exception as e:
+            print(e)
 
     def _acknowledge(self, message: snakes.GameMessage, host: str, port: int):
         ackMessage = snakes.GameMessage(
@@ -208,45 +217,48 @@ class GameEngine(Subscriber):
         self.network_handler.multicast(message=announceMessage)
 
     def _ping(self):
-        to_be_deleted = set()
-        current_time = time.time_ns()
+        try:
+            to_be_deleted = set()
+            current_time = time.time_ns()
 
-        for player in self.player_manager.getPlayers():
-            if player == self.player_manager.client_player:
-                continue  # better not to kick yourself, even if something is wrong
+            for player in self.player_manager.getPlayers():
+                if player == self.player_manager.client_player:
+                    continue  # better not to kick yourself, even if something is wrong
 
-            if current_time - player.last_socket_message_sent > self.state_delay_ms // 10 * 1e6:
-                pingMessage = snakes.GameMessage(ping=snakes.GameMessage.PingMsg())
-                self._sendMessage2Player(message=pingMessage, player=player)
+                if current_time - player.last_socket_message_sent > self.state_delay_ms // 10 * 1e6:
+                    pingMessage = snakes.GameMessage(ping=snakes.GameMessage.PingMsg())
+                    self._sendMessage2Player(message=pingMessage, player=player)
 
-            if current_time - player.last_socket_message_got > self.state_delay_ms * 0.8 * 1e6:
-                logging.warning(f"{player.name}#{player.id} does not respond. Kicked from formation.")
-                to_be_deleted.add(player)
+                if current_time - player.last_socket_message_got > self.state_delay_ms * 10.0 * 1e6:
+                    logging.warning(f"{player.name}#{player.id} does not respond. Kicked from formation.")
+                    to_be_deleted.add(player)
 
-                # Situation A. NORMAL sees MASTER died
-                if self.player_manager.client_player.role == snakes.NORMAL:
-                    if player.role == snakes.MASTER:
-                        logging.info("MASTER dead, switching to DEPUTY.")
-                        self._switch2NewMaster()
+                    # Situation A. NORMAL sees MASTER died
+                    if self.player_manager.client_player.role == snakes.NORMAL:
+                        if player.role == snakes.MASTER:
+                            logging.info("MASTER dead, switching to DEPUTY.")
+                            self._switch2NewMaster()
 
-                # Situation B. MASTER sees DEPUTY died
-                elif self.player_manager.client_player.role == snakes.MASTER:
-                    if player.role == snakes.DEPUTY:
-                        logging.info("DEPUTY dead, assigning new DEPUTY.")
-                        self._assignNewDeputy()
+                    # Situation B. MASTER sees DEPUTY died
+                    elif self.player_manager.client_player.role == snakes.MASTER:
+                        if player.role == snakes.DEPUTY:
+                            logging.info("DEPUTY dead, assigning new DEPUTY.")
+                            self._assignNewDeputy()
 
-                # Situation C. DEPUTY sees MASTER died
-                elif self.player_manager.client_player.role == snakes.DEPUTY:
-                    if player.role == snakes.MASTER:
-                        logging.info("MASTER dead, i shall become new MASTER.")
-                        self._becomeMaster()
-        for player in to_be_deleted:
-            self.player_manager.removePlayerByID(player.id)
-            snakes_with_id = set(
-                filter(lambda s: s.player_id == player.id, self.field_manager.getSnakes())
-            )
-            for snake in snakes_with_id:
-                snake.state = snakes.GameState.Snake.SnakeState.ZOMBIE
+                    # Situation C. DEPUTY sees MASTER died
+                    elif self.player_manager.client_player.role == snakes.DEPUTY:
+                        if player.role == snakes.MASTER:
+                            logging.info("MASTER dead, i shall become new MASTER.")
+                            self._becomeMaster()
+            for player in to_be_deleted:
+                self.player_manager.removePlayerByID(player.id)
+                snakes_with_id = set(
+                    filter(lambda s: s.player_id == player.id, self.field_manager.getSnakes())
+                )
+                for snake in snakes_with_id:
+                    snake.state = snakes.GameState.Snake.SnakeState.ZOMBIE
+        except Exception as e:
+            print("_ping", e)
 
     def _findNewDeputy(self) -> Union[Player, None]:
         normal_players = self.player_manager.getPlayersWithRole(snakes.NORMAL)
@@ -352,6 +364,7 @@ class GameEngine(Subscriber):
         raw = bytes(datagram.data())
         message = snakes.GameMessage()
         message.ParseFromString(raw)
+        # print(message.WhichOneof("Type"), type(message))
         match message.WhichOneof("Type"):
             # do not care
             case "announcement":
@@ -360,6 +373,7 @@ class GameEngine(Subscriber):
             # client and server
             case "ack":
                 try:
+                    print(message)
                     self._on_notify_ack(message)
                 except Exception as e:
                     print("ack", e)
@@ -369,7 +383,7 @@ class GameEngine(Subscriber):
                 logging.error(message)
             case "role_change":
                 try:
-                    self._on_notify_role_change(message)
+                    self._on_notify_role_change(message, datagram)
                 except Exception as e:
                     print("role_change", e)
 
@@ -396,11 +410,14 @@ class GameEngine(Subscriber):
                 except Exception as e:
                     print("state", e)
 
-        player = self.player_manager.getPlayerByID(message.sender_id)
-        if player is None:
-            logging.warning(f"Got message from unknown player with id {message.sender_id}")
-            return
-        player.last_socket_message_got = current_time
+        try:
+            player = self.player_manager.getPlayerByID(message.sender_id)
+            if player is None:
+                logging.warning(f"Got message from unknown player with id {message.sender_id}")
+                return
+            player.last_socket_message_got = time.time_ns()
+        except Exception as e:
+            print("last_socket_message_got", e)
 
     def _on_notify_state(self, message: snakes.GameMessage):
         if message.state.state.state_order > self._state_order:
@@ -417,6 +434,7 @@ class GameEngine(Subscriber):
             self._messages_expecting_ack.pop(message.msg_seq)
         # first ACK message from MASTER contains player's ID
         if self.player_manager.client_player.id == -1:
+            logging.info(f"Ack from MASTER, obtained player_id {message.receiver_id}")
             self.player_manager.client_player.id = message.receiver_id
 
     def _on_notify_steer(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
@@ -427,7 +445,7 @@ class GameEngine(Subscriber):
                     snake.direction = message.steer.direction
             self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
 
-    def _on_notify_role_change(self, message: snakes.GameMessage):
+    def _on_notify_role_change(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
         if self.player_manager.client_player.role == snakes.MASTER == message.role_change.receiver_role:
             if message.role_change.sender_role == snakes.VIEWER:
                 player = self.player_manager.getPlayerByID(message.sender_id)
@@ -459,6 +477,9 @@ class GameEngine(Subscriber):
         else:
             logging.warning("Unsupported role_change request:")
             logging.warning(message)
+            return
+        print(datagram.senderAddress().toString().replace("::ffff:", ""))
+        self._acknowledge(message, datagram.senderAddress().toString().replace("::ffff:", ""), datagram.senderPort())
 
     def _on_notify_join(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
         ip_address = datagram.senderAddress().toString().replace("::ffff:", "")
