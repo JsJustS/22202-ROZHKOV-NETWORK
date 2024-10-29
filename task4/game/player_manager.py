@@ -45,7 +45,7 @@ class PlayerManager:
     def __init__(self, client_player: Player, existing_players: snakes.GamePlayers):
         self.client_player = client_player
 
-        self._players = set()
+        self._players: set[Player] = set()
         self.addPlayer(client_player)
 
         try:
@@ -72,7 +72,7 @@ class PlayerManager:
     def getMaster(self) -> Union[Player, None]:
         masters = self.getPlayersWithRole(snakes.MASTER)
         if len(masters) == 0:
-            logging.error(self.asMsg())
+            # logging.error([f"{player.name}#{player.id}|{player.role}" for player in self._players])
             return None
         if len(masters) > 1:
             logging.warning("More than 1 player with MASTER role were found.")
@@ -85,6 +85,13 @@ class PlayerManager:
         if len(deputies) > 1:
             logging.warning("More than 1 player with DEPUTY role were found.")
         return deputies.pop()
+
+    def getMaxPlayerID(self) -> int:
+        max_ = -1
+        for player in self._players:
+            if player.id > max_:
+                max_ = player.id
+        return max_
 
     def addPlayer(self, player: Player) -> None:
         self._players.add(player)
