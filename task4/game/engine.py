@@ -175,7 +175,7 @@ class GameEngine(Subscriber):
 
     def _retrySending2Master(self):
         try:
-            for message in self._messages_expecting_ack:
+            for message in self._messages_expecting_ack.values():
                 self._sendMessage2Master(message, expect_ack=True, calibrate=False)
         except Exception as e:
             print(e)
