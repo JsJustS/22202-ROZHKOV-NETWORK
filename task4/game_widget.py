@@ -122,7 +122,7 @@ class GameWidget(QWidget):
             self.masterLabel.setText(f"MASTER: <NOT FOUND>")
 
         self.foodLabel.setText(f"FOOD: {self.engine.field_manager.food_static} "
-                               f"+ {len(self.engine.player_manager.getPlayers(lambda x: x.role != snakes.VIEWER))}")
+                               f"+ {len(self.engine.field_manager.getSnakes())}")
 
         self.sizeLabel.setText(f"SIZE: {self.engine.field_manager.width}x{self.engine.field_manager.height}")
 
