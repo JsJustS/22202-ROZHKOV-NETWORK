@@ -8,6 +8,13 @@ import logging
 
 
 class Snake:
+    steer_block = {
+        snakes.Direction.DOWN: snakes.Direction.UP,
+        snakes.Direction.UP: snakes.Direction.DOWN,
+        snakes.Direction.LEFT: snakes.Direction.RIGHT,
+        snakes.Direction.RIGHT: snakes.Direction.LEFT,
+    }
+
     def __init__(
             self,
             player_id: int,
@@ -17,8 +24,9 @@ class Snake:
             state: snakes.GameState.Snake.SnakeState = snakes.GameState.Snake.SnakeState.ALIVE,
     ):
         self.player_id = player_id
-        self.direction = direction
         self.state = state
+        self.direction = direction
+        self._requested_direction = None
 
         self.head_x = head_x
         self.head_y = head_y
@@ -75,8 +83,14 @@ class Snake:
             state=self.state
         )
 
+    def turn(self, direction: snakes.Direction):
+        self._requested_direction = direction
+
     def move(self):
         new_x, new_y = self.head_x, self.head_y
+        if self._requested_direction is not None:
+            self.direction = self._requested_direction
+            self._requested_direction = None
         match self.direction:
             case snakes.Direction.UP:
                 new_y -= 1

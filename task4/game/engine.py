@@ -15,13 +15,6 @@ from task4.network import NetworkHandler, Subscriber
 
 
 class GameEngine(Subscriber):
-    steer_block = {
-        snakes.Direction.DOWN: snakes.Direction.UP,
-        snakes.Direction.UP: snakes.Direction.DOWN,
-        snakes.Direction.LEFT: snakes.Direction.RIGHT,
-        snakes.Direction.RIGHT: snakes.Direction.LEFT,
-    }
-
     def __init__(
             self,
             game_name: str,
@@ -492,8 +485,8 @@ class GameEngine(Subscriber):
         snakes_with_id = set(filter(lambda s: s.player_id == message.sender_id, self.field_manager.getSnakes()))
         if len(snakes_with_id) > 0:
             for snake in snakes_with_id:
-                if self.steer_block[message.steer.direction] != snake.direction:
-                    snake.direction = message.steer.direction
+                if Snake.steer_block[message.steer.direction] != snake.direction:
+                    snake.turn(message.steer.direction)
             self._acknowledge(message=message, host=datagram.senderAddress(), port=datagram.senderPort())
 
     def _on_notify_role_change(self, message: snakes.GameMessage, datagram: QNetworkDatagram):
