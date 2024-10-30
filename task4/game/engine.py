@@ -294,6 +294,7 @@ class GameEngine(Subscriber):
             logging.info("Could not assign new DEPUTY.")
 
     def _becomeMaster(self):
+        logging.info("I am now MASTER")
         self.player_manager.client_player.role = snakes.MASTER
         deputy = self._findNewDeputy()
         if deputy is None:

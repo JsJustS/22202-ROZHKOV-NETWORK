@@ -130,13 +130,13 @@ class GameWidget(QWidget):
         self.ratingList.clear()
         sorted_active_players = sorted(
             self.engine.player_manager.getPlayers(
-                lambda x: x.role != snakes.VIEWER
+                lambda x: x.role != snakes.VIEWER or x.score > 0
             ),
             key=lambda x: x.score,
             reverse=True
         )
         for player in sorted_active_players:
-            self.ratingList.addItem(QListWidgetItem(f"{player.score:5} | {player.name}"))
+            self.ratingList.addItem(QListWidgetItem(f"{player.score:5} | {player.name}#{player.id}"))
 
 
 class FieldWidget:
